@@ -2,7 +2,7 @@
 #include <iostream>
 #include <memory>
 #include <utility>
-#include <type_traits>]\
+#include <type_traits>
 
 struct AddOne{
 
