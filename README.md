@@ -1,6 +1,6 @@
 # Ann's Numerical Nonsense (ann)
 
-![Beautiful Image Courtesy of EpicYoshiMaster](MNIST-Fashion-9-1-21.png)
+![Beautiful Image Courtesy of EpicYoshiMaster](Pokemon_Against_Inheritance_TWO.png)
 
 
 # Project Goals
