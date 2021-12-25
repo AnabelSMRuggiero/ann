@@ -23,6 +23,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <mutex>
 #include <bit>
 #include <memory>
+#include <cstddef>
+#include <type_traits>
 
 #include "PointerManipulation.hpp"
 
@@ -92,20 +94,20 @@ struct FreeListResource : std::pmr::memory_resource{
 
     private:
 
-    
+
 
     std::pmr::memory_resource* upstream = std::pmr::get_default_resource();
     FreeListNode* head = nullptr;
     size_t listSize = 0;
 
-    
+
     void* FindNodeLocation(std::byte* chunkStart, size_t size, size_t alignment){
         //alignment = std::max(alignment , alignof(FreeListNode));
         size_t excess = size % alignof(FreeListNode);
         if(excess > 0){
             size += alignof(FreeListNode) - excess;
         }
-        void* ptrToNode = static_cast<void*>(chunkStart + size); 
+        void* ptrToNode = static_cast<void*>(chunkStart + size);
         return ptrToNode;
     }
 
@@ -123,15 +125,15 @@ struct FreeListResource : std::pmr::memory_resource{
         listSize -= 1;
         return oldHead;
     }
-    
+
     void PushFront(FreeListNode* newNode){
-        
+
         newNode->next = head;
         head = newNode;
         listSize += 1;
-        
+
     }
-    
+
     void ReturnChunk(FreeListNode* listNode){
         upstream->deallocate(listNode->chunkStart, listNode->chunkSize, listNode->chunkAlign);
     }
@@ -147,15 +149,15 @@ struct FreeListResource : std::pmr::memory_resource{
     }
 
     void* GetChunk(size_t size, size_t alignment){
-        
+
         //auto [newSize, newAlign] = AdjustAllocation(size, alignment);
 
         void* chunk = upstream->allocate(size, alignment);
-        
+
         std::byte* byteArray = new (chunk) std::byte[size];
         std::byte* nodeLocation = byteArray + (size - sizeof(FreeListNode));
         new (nodeLocation) FreeListNode{byteArray, size, alignment, nullptr};
-        
+
         return chunk;
     }
 
@@ -167,50 +169,65 @@ struct CacheNode{
     std::byte* chunkStart = nullptr;
     size_t chunkSize = 0;
     size_t chunkAlign = 0;
-};
 
-//MemoryCache owns the memory it is holding, but gives up ownership of the memory it gives out.
-//This way, as long as two MemoryCaches have the same upstream, they could be interchangable (not implemented yet)
-template<size_t cacheSlots = 3>
-struct MemoryCache : std::pmr::memory_resource{
-    using NodeType = CacheNode;
+    CacheNode() = default;
+    CacheNode(const CacheNode&) = default;
+    CacheNode(CacheNode&&) = default;
+    CacheNode& operator=(const CacheNode&) = default;
+    CacheNode& operator=(CacheNode&&) = default;
 
-    static constexpr size_t cacheSize = cacheSlots;
+    CacheNode(std::byte* chunkStart, size_t chunkSize, size_t chunkAlign):
+        chunkStart{chunkStart},
+        chunkSize{chunkSize},
+        chunkAlign{chunkAlign} {}
 
-    MemoryCache() = default;
-    
-    MemoryCache(std::pmr::memory_resource* upstream): upstream(upstream) {}
+    CacheNode(std::nullptr_t): CacheNode(){}
 
-    MemoryCache(const MemoryCache&) = delete;
-
-    MemoryCache(MemoryCache&&) = delete;
-
-    MemoryCache& operator=(const MemoryCache&) = delete;
-
-    MemoryCache& operator=(MemoryCache&&) = delete;
-
-    ~MemoryCache(){
-        for (auto itr = cachedMemory.begin(); itr != partitionPoint; itr++){
-            ReturnChunk(*(*itr));
-        }
+    CacheNode& operator=(std::nullptr_t){
+        chunkStart = nullptr;
+        return *this;
     }
 
+    operator bool() const {
+        return chunkStart == nullptr;
+    }
+
+    bool operator==(const CacheNode&) const = default;
+
+    bool operator==(std::nullptr_t) const {
+        return chunkStart == nullptr;
+    }
+};
+
+template<typename CachePolicy>
+struct CacheBase : std::pmr::memory_resource{
+    public:
+    using NodeType = CacheNode;
+    using Derived = CachePolicy;
+    using ResourceType = std::pmr::memory_resource;
+
+    private:
+    Derived& DerivedCast() {
+        return static_cast<Derived&>(*this);
+    }
+
+    ResourceType& Upstream(){
+        return static_cast<Derived&>(*this).GetResource();
+    }
+
+    public:
     void* do_allocate( std::size_t bytes, std::size_t alignment ) override{
         auto [newSize, newAlign] = AdjustAllocation(bytes, alignment);
-        
-        for (auto itr = cachedMemory.begin(); itr != partitionPoint; itr++){
-            std::optional<NodeType>& node = *itr;
-            if ((node->chunkSize >= newSize) && (node->chunkAlign >= newAlign)){
-                std::byte* memPtr = node->chunkStart;
-                ReemplaceNode(node, bytes, alignment);
-                --partitionPoint;
-                std::swap(node, *partitionPoint);
-                return static_cast<void*>(memPtr);
-            }   
+
+        NodeType fromCache = DerivedCast().SearchCache(newSize, newAlign);
+
+        if (fromCache != nullptr){
+            std::byte* memPtr = fromCache.chunkStart;
+            ReemplaceNode(fromCache, bytes, alignment);
+            return static_cast<void*>(memPtr);
+        } else {
+            return GetChunk(newSize, newAlign);
         }
-
-        return GetChunk(newSize, newAlign);
-
         //else return new chunk
     }
 
@@ -218,56 +235,43 @@ struct MemoryCache : std::pmr::memory_resource{
         std::byte* byteArray = std::launder(static_cast<std::byte*>(p));
         NodeType* nodeLocation = std::launder(static_cast<NodeType*>(FindNodeLocation(byteArray, bytes, alignment)));
 
-        if (partitionPoint != cachedMemory.end()){
-            *partitionPoint = *nodeLocation;
-            partitionPoint++;
-        } else{
-            ReturnChunk(*(cachedMemory.back()));
-            cachedMemory.back() = *nodeLocation;
-            std::swap(cachedMemory.back(), cachedMemory.front());
-        }
-
+        NodeType nodeToReturn = *nodeLocation;
         nodeLocation->~NodeType();
-        //find list node location from args
-        //push to front of list
-        //if list over threshold, return an old chunk upstream
+
+        if (NodeType evictedNode = DerivedCast().PlaceNode(*nodeLocation); evictedNode != nullptr){
+            ReturnChunk(evictedNode);
+        }
     }
+
 
     bool do_is_equal( const std::pmr::memory_resource& other ) const noexcept override {
         return this == &other;
     };
 
 
+    protected:
+    void ReturnChunk(const NodeType& memToReturn){
+        Upstream().deallocate(memToReturn.chunkStart, memToReturn.chunkSize, memToReturn.chunkAlign);
+    }
+
     private:
-
-    std::array<std::optional<NodeType>, cacheSize> cachedMemory;
-    typename std::array<std::optional<NodeType>, cacheSize>::iterator partitionPoint = cachedMemory.begin();
-
-    std::pmr::memory_resource* upstream = std::pmr::get_default_resource();
-
-
-    
     void* FindNodeLocation(std::byte* chunkStart, size_t size, size_t alignment){
         alignment = std::max(alignment, alignof(NodeType));
         size_t excess = size % alignof(NodeType);
         if(excess > 0){
             size += alignof(NodeType) - excess;
         }
-        void* ptrToNode = static_cast<void*>(chunkStart + size); 
+        void* ptrToNode = static_cast<void*>(chunkStart + size);
         return ptrToNode;
     }
 
-    void ReemplaceNode(std::optional<NodeType>& nodeToPlace, size_t requestedSize, size_t requestedAlignment){
-        
-        void* newLoc = FindNodeLocation(nodeToPlace->chunkStart, requestedSize, requestedAlignment);
-        new (newLoc) NodeType(*nodeToPlace);
-        nodeToPlace = std::nullopt;
+    void ReemplaceNode(const NodeType& nodeToPlace, size_t requestedSize, size_t requestedAlignment){
+        void* newLoc = FindNodeLocation(nodeToPlace.chunkStart, requestedSize, requestedAlignment);
+        new (newLoc) NodeType(nodeToPlace);
     }
 
-    
-    void ReturnChunk(const NodeType& memToReturn){
-        upstream->deallocate(memToReturn.chunkStart, memToReturn.chunkSize, memToReturn.chunkAlign);
-    }
+
+
 
     std::pair<size_t, size_t> AdjustAllocation(size_t size, size_t alignment){
         alignment = std::max(alignment, alignof(NodeType));
@@ -280,23 +284,92 @@ struct MemoryCache : std::pmr::memory_resource{
     }
 
     void* GetChunk(size_t size, size_t alignment){
-        
+
         //auto [newSize, newAlign] = AdjustAllocation(size, alignment);
 
-        void* chunk = upstream->allocate(size, alignment);
-        
+        void* chunk = Upstream().allocate(size, alignment);
+
         std::byte* byteArray = new (chunk) std::byte[size];
         std::byte* nodeLocation = byteArray + (size - sizeof(NodeType));
         new (nodeLocation) NodeType{byteArray, size, alignment};
-        
+
         return chunk;
     }
-
 };
+
+template<size_t cacheSlots = 3>
+struct ShallowCache : CacheBase<ShallowCache<cacheSlots>> {
+    using ResourceType = std::pmr::memory_resource;
+    using OwningCache = std::false_type;
+    static constexpr bool isOwning = OwningCache{};
+    static constexpr size_t cacheSize = cacheSlots;
+
+    using NodeType = typename CacheBase<ShallowCache>::NodeType;
+
+    using CacheIterator = typename std::array<NodeType, cacheSize>::iterator;
+
+    ShallowCache() = default;
+
+    ShallowCache(std::pmr::memory_resource* upstream): upstream(*upstream) {}
+
+    ShallowCache(const ShallowCache&) = delete;
+
+    ShallowCache(ShallowCache&&) = delete;
+
+    ShallowCache& operator=(const ShallowCache&) = delete;
+
+    ShallowCache& operator=(ShallowCache&&) = delete;
+
+    ~ShallowCache(){
+        for (auto itr = cachedMemory.begin(); itr != partitionPoint; itr++){
+            this->ReturnChunk(*itr);
+        }
+    }
+
+    NodeType SearchCache(const size_t chunkSize, const size_t alignment){
+        for (auto itr = cachedMemory.begin(); itr != partitionPoint; itr++){
+            NodeType& node = *itr;
+            if ((node.chunkSize >= chunkSize) && (node.chunkAlign >= alignment)){
+                NodeType retNode = node;
+                node = nullptr;
+                --partitionPoint;
+                std::swap(node, *partitionPoint);
+                return retNode;
+            }
+        }
+
+        return nullptr;
+    }
+
+    NodeType PlaceNode(NodeType nodeToPlace){
+        if (partitionPoint != cachedMemory.end()){
+            *partitionPoint = nodeToPlace;
+            partitionPoint++;
+            return nullptr;
+        } else{
+            NodeType retNode = cachedMemory.back();
+            cachedMemory.back() = cachedMemory.front();
+            cachedMemory.front() = nodeToPlace;
+            return retNode;
+        }
+    }
+
+    ResourceType& GetResource(){
+        return upstream;
+    }
+
+    private:
+    std::array<NodeType, cacheSize> cachedMemory;
+    CacheIterator partitionPoint = cachedMemory.begin();
+
+    ResourceType& upstream{*std::pmr::get_default_resource()};
+};
+
+
 
 //For testing, prints allocs and deallocs to cout
 struct ChatterResource : std::pmr::memory_resource{
-    
+
     ChatterResource() = default;
 
     ChatterResource(std::pmr::memory_resource* upstream): upstream(upstream){}
@@ -311,7 +384,7 @@ struct ChatterResource : std::pmr::memory_resource{
 
 
     void* do_allocate( std::size_t bytes, std::size_t alignment ) override{
-        
+
         std::cout << "Allocation - size: " << bytes << ", alignment: " << alignment << std::endl;
 
         return upstream->allocate(bytes, alignment);
@@ -340,11 +413,11 @@ struct MemoryChunk{
     size_t size;
 };
 //Implementation detail of AtomicMultiPool
-
+/*
 struct AtomicPool{
     const size_t chunkSize;
     const size_t restockAmount;
-    
+
     AtomicPool(const size_t chunkSize, const size_t restockAmount, std::pmr::memory_resource* upstream):
         chunkSize{chunkSize},
         restockAmount{restockAmount},
@@ -459,7 +532,7 @@ struct AtomicMultipool : std::pmr::memory_resource{
 
         [[likely]] if (alignment<=defaultAlignment){
             size_t adjustedSize = std::bit_ceil(bytes);
-            
+
             size_t poolIndex = [&]()->size_t{
                 if (adjustedSize <= startSize){
                     return 0;
@@ -471,10 +544,10 @@ struct AtomicMultipool : std::pmr::memory_resource{
             std::byte* chunk = memoryPools[poolIndex].Allocate(pullFromUpstream);
 
             return static_cast<void*>(chunk);
-            
+
         } else { //guh, who are you, me?
             size_t adjustedSize = std::bit_ceil(bytes+alignment);
-            
+
             size_t poolIndex = [&]()->size_t{
                 if (adjustedSize <= startSize){
                     return 0;
@@ -521,7 +594,7 @@ struct AtomicMultipool : std::pmr::memory_resource{
     std::mutex upstreamLock;
     //Add in some sort of flexible memory cache to handle oversized allocs
 };
-
+*/
 
 
 //literally just std::pmr::polymorphic_allocator, but with overwritten default constructor that pulls from the internal resource.
@@ -529,7 +602,7 @@ template<typename ValueType>
 struct PolymorphicAllocator : std::pmr::polymorphic_allocator<ValueType>{
     using std::pmr::polymorphic_allocator<ValueType>::polymorphic_allocator;
     PolymorphicAllocator() : std::pmr::polymorphic_allocator<ValueType>(internal::GetInternalResource()){}
-    
+
     template<typename OtherValueType>
     PolymorphicAllocator(const std::pmr::polymorphic_allocator<OtherValueType>& other) : std::pmr::polymorphic_allocator<ValueType>(other) {}
 
