@@ -200,11 +200,33 @@ struct CacheNode{
 };
 
 template<typename CachePolicy>
+struct CacheBase;
+
+template<typename CachePolicy>
+concept HasOwningType = requires { 
+    typename CachePolicy::OwningCache;
+    {typename CachePolicy::OwningCache{}} -> std::same_as<std::true_type>;
+};
+
+template<typename CachePolicy>
+concept HasOwningMember = requires { 
+    {std::integral_constant<bool, CachePolicy::isOwning>{}} -> std::same_as<std::true_type>;
+};
+
+template<typename CachePolicy>
+concept OwningCache = (HasOwningType<CachePolicy> || HasOwningMember<CachePolicy>) && requires (CachePolicy derived){
+    typename CacheBase<CachePolicy>::NodeType;
+    derived.Register(typename CacheBase<CachePolicy>::NodeType{});
+};
+
+template<typename CachePolicy>
 struct CacheBase : std::pmr::memory_resource{
     public:
     using NodeType = CacheNode;
     using Derived = CachePolicy;
     using ResourceType = std::pmr::memory_resource;
+
+    static constexpr bool isOwning = OwningCache<Derived>;
 
     private:
     Derived& DerivedCast() {
@@ -292,6 +314,9 @@ struct CacheBase : std::pmr::memory_resource{
         std::byte* byteArray = new (chunk) std::byte[size];
         std::byte* nodeLocation = byteArray + (size - sizeof(NodeType));
         new (nodeLocation) NodeType{byteArray, size, alignment};
+        if constexpr (isOwning){
+            DerivedCast().Register(NodeType{byteArray, size, alignment});
+        }
 
         return chunk;
     }
@@ -312,6 +337,8 @@ struct ShallowCache : CacheBase<ShallowCache<cacheSlots>> {
 
     ShallowCache(std::pmr::memory_resource* upstream): upstream(*upstream) {}
 
+    // Do I want a movable/copiable cache to be possible?
+    // If not, move these deletes to the base.
     ShallowCache(const ShallowCache&) = delete;
 
     ShallowCache(ShallowCache&&) = delete;
@@ -363,6 +390,70 @@ struct ShallowCache : CacheBase<ShallowCache<cacheSlots>> {
     CacheIterator partitionPoint = cachedMemory.begin();
 
     ResourceType& upstream{*std::pmr::get_default_resource()};
+};
+
+
+struct DynamicCache : CacheBase<DynamicCache> {
+    using ResourceType = std::pmr::memory_resource;
+
+    static constexpr bool isOwning = true;
+
+    using NodeType = typename CacheBase<DynamicCache>::NodeType;
+
+    DynamicCache() = default;
+
+    DynamicCache(std::pmr::memory_resource* upstream): upstream(*upstream) {}
+
+    // Do I want a movable/copiable cache to be possible?
+    // If not, move these deletes to the base.
+    DynamicCache(const DynamicCache&) = delete;
+
+    DynamicCache(DynamicCache&&) = delete;
+
+    DynamicCache& operator=(const DynamicCache&) = delete;
+
+    DynamicCache& operator=(DynamicCache&&) = delete;
+
+    ~DynamicCache(){
+        for(auto&& node : memoryHistory){
+            ReturnChunk(node);
+        }
+    }
+
+    NodeType SearchCache(const size_t chunkSize, const size_t alignment){
+        auto locationItr = std::ranges::lower_bound(cachedMemory, chunkSize, std::less<>{}, &NodeType::chunkSize);
+        while (locationItr != cachedMemory.end()){
+            if (locationItr->chunkAlign >= alignment){
+                NodeType retNode = *locationItr;
+                cachedMemory.erase(locationItr);
+                return retNode;
+            }
+            ++locationItr;
+        }
+        return nullptr;
+    }
+
+    std::nullptr_t PlaceNode(NodeType nodeToPlace){
+        auto locationItr = std::ranges::lower_bound(cachedMemory, nodeToPlace.chunkSize, std::less<>{}, &NodeType::chunkSize);
+        cachedMemory.insert(locationItr, std::move(nodeToPlace));
+        return nullptr;
+    }
+
+    void Register(NodeType newNode){
+        //auto locationItr = std::ranges::lower_bound(memoryHistory, newNode.chunkSize, std::less<>{}, &NodeType::chunkSize);
+        //cachedMemory.insert(locationItr, std::move(newNode));
+        memoryHistory.push_back(std::move(newNode));
+    }
+
+    ResourceType& GetResource(){
+        return upstream;
+    }
+
+    private:
+    ResourceType& upstream{*std::pmr::get_default_resource()};
+
+    std::pmr::vector<NodeType> cachedMemory{&upstream};
+    std::pmr::vector<NodeType> memoryHistory{&upstream};
 };
 
 
