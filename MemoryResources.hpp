@@ -393,28 +393,28 @@ struct ShallowCache : CacheBase<ShallowCache<cacheSlots>> {
 };
 
 
-struct DynamicCache : CacheBase<DynamicCache> {
+struct UnboundedCache : CacheBase<UnboundedCache> {
     using ResourceType = std::pmr::memory_resource;
 
     static constexpr bool isOwning = true;
 
-    using NodeType = typename CacheBase<DynamicCache>::NodeType;
+    using NodeType = typename CacheBase<UnboundedCache>::NodeType;
 
-    DynamicCache() = default;
+    UnboundedCache() = default;
 
-    DynamicCache(std::pmr::memory_resource* upstream): upstream(*upstream) {}
+    UnboundedCache(std::pmr::memory_resource* upstream): upstream(*upstream) {}
 
     // Do I want a movable/copiable cache to be possible?
     // If not, move these deletes to the base.
-    DynamicCache(const DynamicCache&) = delete;
+    UnboundedCache(const UnboundedCache&) = delete;
 
-    DynamicCache(DynamicCache&&) = delete;
+    UnboundedCache(UnboundedCache&&) = delete;
 
-    DynamicCache& operator=(const DynamicCache&) = delete;
+    UnboundedCache& operator=(const UnboundedCache&) = delete;
 
-    DynamicCache& operator=(DynamicCache&&) = delete;
+    UnboundedCache& operator=(UnboundedCache&&) = delete;
 
-    ~DynamicCache(){
+    ~UnboundedCache(){
         for(auto&& node : memoryHistory){
             ReturnChunk(node);
         }

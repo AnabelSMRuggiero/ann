@@ -11,6 +11,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_POINTERMANIPULATION_HPP
 #define NND_POINTERMANIPULATION_HPP
 
+#include <cstddef>
+
 namespace nnd {
 
 enum struct InstructionSet{
@@ -32,7 +34,7 @@ consteval InstructionSet DetectInstructionSet(){
         return InstructionSet::fma;
     #elif defined __AVX2__
         return InstructionSet::avx2;
-    #elif __AVX__
+    #elif defined __AVX__
         return InstructionSet::avx;
     #else
         return InstructionSet::unknown;
@@ -63,6 +65,40 @@ struct DataVectorBase{
     using DerivedClass = Derived;
 };
 
+template<typename DataType>
+struct DataVector : DataVectorBase<DataVector>{
+    using UnderlyingType = DataType;
+
+};
+
+enum struct UnaryOperation{
+    negate,
+};
+
+template<typename Operand, typename UnaryOperation>
+struct UnaryVectorOperation : DataVectorBase<UnaryVectorOperation>{
+    using UnderlyingType = DataType;
+
+    Operand& operandRef;
+
+};
+
+enum struct BinaryOperation{
+    add,
+    subtract,
+    multiply,
+    divide,
+    fma,
+    sqrt,
+};
+
+template<typename LHSOperand, typename RHSOperand, typename BinaryOperation>
+struct BinaryVectorOperation : DataVectorBase<BinaryVectorOperation>{
+    using UnderlyingType = DataType;
+    
+    LHSOperand& lhsOperandRef;
+    RHSOperand& rhsOperandRef;
+};
 
     
 }
