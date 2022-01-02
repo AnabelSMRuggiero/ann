@@ -64,19 +64,19 @@ void BatchEuclideanNorm(const AlignedSpan<const float> pointB,
         //Pre load first set of elements
         fromComponent1 = _mm256_load_ps(&(pointB[0]));
 
-        for (size_t i = 0; i < numPointsTo; i+=1) toComponents[i] = NTLoadFloat(&(pointsTo[i][0]));
-        //for (size_t i = 0; i < numPointsTo; i += 1) toComponents[i] = _mm256_load_ps(&(pointsTo[i][0]));
+        //for (size_t i = 0; i < numPointsTo; i+=1) toComponents[i] = NTLoadFloat(&(pointsTo[i][0]));
+        for (size_t i = 0; i < numPointsTo; i += 1) toComponents[i] = _mm256_load_ps(&(pointsTo[i][0]));
             
         //Core computation loop
         for(;index+15<pointB.size(); index+=8){
             fromComponent2 = _mm256_load_ps(&(pointB[index+8]));
-
+            
             for(size_t j = 0; j<numPointsTo; j+=1) toComponents[j] = _mm256_sub_ps(toComponents[j], fromComponent1);
             for(size_t j = 0; j<numPointsTo; j+=1) accumulators[j] = _mm256_fmadd_ps(toComponents[j], toComponents[j], accumulators[j]);
                 
             //Load for next iteration
-            //for(size_t j = 0; j<numPointsTo; j+=1) toComponents[j] = _mm256_load_ps(&(pointsTo[j][index+8]));
-            for(size_t j = 0; j<numPointsTo; j+=1) toComponents[j] = NTLoadFloat(&(pointsTo[j][index+8]));
+            for(size_t j = 0; j<numPointsTo; j+=1) toComponents[j] = _mm256_load_ps(&(pointsTo[j][index+8]));
+            //for(size_t j = 0; j<numPointsTo; j+=1) toComponents[j] = NTLoadFloat(&(pointsTo[j][index+8]));
             fromComponent1 = fromComponent2;
         }
         

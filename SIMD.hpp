@@ -8,99 +8,26 @@ Please refer to the project repo for any updates regarding liscensing.
 https://github.com/AnabelSMRuggiero/NNDescent.cpp
 */
 
-#ifndef NND_POINTERMANIPULATION_HPP
-#define NND_POINTERMANIPULATION_HPP
+#ifndef NND_SIMD_HPP
+#define NND_SIMD_HPP
 
 #include <cstddef>
 
 namespace nnd {
 
-enum struct InstructionSet{
-    //X64
-    avx,
-    avx2,
-    fma,
-    avx512,
-    //ARM... maybe at some point.
-    neon,
-    //Catch all
-    unknown
-};
 
-consteval InstructionSet DetectInstructionSet(){
-    #ifdef __AVX512__
-        return InstructionSet::avx512;
-    #elif defined __FMA__
-        return InstructionSet::fma;
-    #elif defined __AVX2__
-        return InstructionSet::avx2;
-    #elif defined __AVX__
-        return InstructionSet::avx;
-    #else
-        return InstructionSet::unknown;
-    #endif
-}
 
-using enum InstructionSet;
 
-constexpr InstructionSet defaultInstructionSet = DetectInstructionSet();
+// x*y + z
 
-template<InstructionSet set>
-constexpr size_t vectorWidth = 0;
+/*
 
-template<>
-constexpr size_t vectorWidth<avx512> = 64;
+    x*y -> BinaryVectorOperation<vector, vector, multiply> tmp
 
-template<>
-constexpr size_t vectorWidth<fma> = 32;
+    tmp + z -> BinaryVectorOperation<BinaryVectorOperation<vector, vector, multiply>, vector, add> res
+               TernaryVectorOperation<
+*/
 
-template<>
-constexpr size_t vectorWidth<avx2> = 32;
-
-template<>
-constexpr size_t vectorWidth<avx> = 32;
-
-template<typename Derived>
-struct DataVectorBase{
-    using DerivedClass = Derived;
-};
-
-template<typename DataType>
-struct DataVector : DataVectorBase<DataVector>{
-    using UnderlyingType = DataType;
-
-};
-
-enum struct UnaryOperation{
-    negate,
-};
-
-template<typename Operand, typename UnaryOperation>
-struct UnaryVectorOperation : DataVectorBase<UnaryVectorOperation>{
-    using UnderlyingType = DataType;
-
-    Operand& operandRef;
-
-};
-
-enum struct BinaryOperation{
-    add,
-    subtract,
-    multiply,
-    divide,
-    fma,
-    sqrt,
-};
-
-template<typename LHSOperand, typename RHSOperand, typename BinaryOperation>
-struct BinaryVectorOperation : DataVectorBase<BinaryVectorOperation>{
-    using UnderlyingType = DataType;
-    
-    LHSOperand& lhsOperandRef;
-    RHSOperand& rhsOperandRef;
-};
-
-    
 }
 
 #endif
