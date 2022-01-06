@@ -27,12 +27,17 @@ struct Op{
     static constexpr size_t Arity = arity;
 };
 
+struct Negate : Op<1> {};
 
 struct Add : Op<2> {};
 
+struct Subtract : Op<2> {};
+
 struct Multiply : Op<2> {};
 
-struct Negate : Op<1> {};
+struct Divide : Op<2> {};
+
+
 
 struct FMA : Op<3>{
     static constexpr std::tuple validInstructionSets {
@@ -45,6 +50,18 @@ struct FMA : Op<3>{
         
     }
 
+};
+
+struct FMS : Op<3>{
+    static constexpr std::tuple validInstructionSets {
+        InstructionSet::fma,
+        InstructionSet::avx512
+    };
+
+    template<typename DataVector>
+    DataVector operator()(DataVector& operand1, DataVector& operand2, DataVector& operand3){
+        
+    }
 
 };
 

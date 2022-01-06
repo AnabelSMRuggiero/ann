@@ -11,9 +11,11 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_SIMDVECTOR_HPP
 #define NND_SIMDVECTOR_HPP
 
+#include <concepts>
+#include <tuple>
+
 #include "SIMDInstructionSet.hpp"
 #include "SIMDOperations.hpp"
-#include <concepts>
 
 namespace ann{
 
@@ -37,28 +39,121 @@ struct VectorOperation : DataVectorBase<VectorOperation>{
     VectorOperation(Op, Operands&&... operands): operands{std::forward_as_tuple<Operands...>(operands...)} {}
 
     VectorOperation(Op, std::tuple<Operands&&...> operands): operands{std::move(operands)} {}
+
 };
 
 
-VectorOperation test{Multiply{}, DataVector<float, InstructionSet::avx>{}, DataVector<float, InstructionSet::avx>{}};
+
+template <typename Func, typename Tuple>
+auto FoldTuple(Func&& func, Tuple&& tuple){
+
+    auto folder = [&](auto&&... args){
+        return std::tuple{func(args)...};
+    };
+    
+    return std::apply(folder, tuple);
+
+};
+
+//This needs work- constrain so only Tuple is tuple-like?
+template <typename Init, typename Reduce, typename Tuple>
+auto ReduceTuple(Init&& init, Reduce&& reduce, Tuple&& tuple){
+
+    if constexpr (std::tuple_size_v<Tuple> == 0) return init;
+
+    auto reducer = [&](auto&& arg1, auto&& arg2, auto&&... args){
+        if constexpr(sizeof...(args) == 0){
+            return reduce(arg1, arg2);
+        } else{
+            return reducer(reduce(arg1, arg2), args...)
+        }
+    };
+    
+    return std::apply(reducer, std::tuple_cat(std::forward_as_tuple<Init>(init), tuple);
+
+};
+
+template<typename DataType, InstructionSet instructions>
+const auto& Evaluate(const DataVector<DataType, instructions>& vec){
+    return vec;
+}
+
+template<typename Op, typename... Operands>
+    requires Operation<Op, sizeof...(Operands)>
+auto Evaluate(const VectorOperation<Op, Operands...>& expression){
+
+    auto recurser = [] (const auto& operand){
+        return Evaluate(operand);
+    };
+
+    return std::apply(Op{}, FoldTuple(recurser, expression.operands));
+}
+
+
+//VectorOperation test{Multiply{}, DataVector<float, InstructionSet::avx>{}, DataVector<float, InstructionSet::avx>{}};
+
+template<typename Operation, typename LHSDerived, typename RHSDerived>
+auto MakeOperation(Operation, const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+
+    return VectorOperation{Operation{}, static_cast<const LHSDerived&>(lhsOperand), static_cast<const RHSDerived&>(rhsOperand)};
+
+};
+
+template<typename Derived>
+auto operator+(const DataVectorBase<Derived>& operand){
+
+    return VectorOperation{Negate{}, static_cast<const Derived&>(operand)};
+
+}
 
 
 template<typename LHSDerived, typename RHSDerived>
 auto operator+(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
-    //return BinaryVectorOperation<LHSDerived, RHSDerived, BinaryOperation::add>{static_cast<LHSDerived&>(lhsOperand), static_cast<RHSDerived&>(rhsOperand)};
+
+    return MakeOperation(Add{}, lhsOperand, rhsOperand);
+
 }
 
 template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
 auto operator+(const DataVectorBase<VectorOperation<Multiply, FirstDerived, SecondDerived>>& lhsOperand, const DataVectorBase<ThirdDerived>& rhsOperand){
-    //static_cast<BinaryVectorOperation<FirstDerived, SecondDerived, BinaryOperation::multiply>&>(lhsOperand).lhsOperandRef;
-    //static_cast<BinaryVectorOperation<FirstDerived, SecondDerived, BinaryOperation::multiply>&>(lhsOperand).rhsOperandRef;
-    //return TernaryVectorOperation<FirstDerived, SecondDerived, ThirdDerived, TernaryOperation::fma>{static_cast<&>(lhsOperand), static_cast<ThirdDerived&>(rhsOperand)};
-    return VectorOperation{FMA{}, tuple_cat(static_cast<VectorOperation<Multiply, FirstDerived, SecondDerived>&>(lhsOperand).operands, {static_cast<ThirdDerived&>(rhsOperand)})};
+    using LHSDerived = VectorOperation<Multiply, FirstDerived, SecondDerived>;
+
+    return VectorOperation{FMA{},
+                           tuple_cat(static_cast<const LHSDerived&>(lhsOperand).operands,
+                                     std::tuple{static_cast<const ThirdDerived&>(rhsOperand)})
+                          };
+}
+
+template<typename LHSDerived, typename RHSDerived>
+auto operator-(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+
+    return MakeOperation(Subtract{}, lhsOperand, rhsOperand);
+
+}
+
+
+template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
+auto operator-(const DataVectorBase<VectorOperation<Multiply, FirstDerived, SecondDerived>>& lhsOperand, const DataVectorBase<ThirdDerived>& rhsOperand){
+    using LHSDerived = VectorOperation<Multiply, FirstDerived, SecondDerived>;
+
+    return VectorOperation{FMS{},
+                           tuple_cat(static_cast<const LHSDerived&>(lhsOperand).operands,
+                                     std::tuple{static_cast<const ThirdDerived&>(rhsOperand)})
+                          };
 }
 
 template<typename LHSDerived, typename RHSDerived>
 auto operator*(DataVectorBase<LHSDerived>& lhsOperand, DataVectorBase<RHSDerived>& rhsOperand){
-    //return BinaryVectorOperation<LHSDerived, RHSDerived, BinaryOperation::multiply>{static_cast<LHSDerived&>(lhsOperand), static_cast<RHSDerived&>(rhsOperand)};
+
+    return MakeOperation(Multiply{}, lhsOperand, rhsOperand);
+
+}
+
+template<typename LHSDerived, typename RHSDerived>
+auto operator/(DataVectorBase<LHSDerived>& lhsOperand, DataVectorBase<RHSDerived>& rhsOperand){
+
+    return MakeOperation(Divide{}, lhsOperand, rhsOperand);
+
 }
 
 

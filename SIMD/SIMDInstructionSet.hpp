@@ -12,6 +12,9 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #define NND_SIMDINSTRUCTIONSET_HPP
 
 #include <cstddef>
+#include <concepts>
+
+#include <immintrin.h>
 
 namespace ann{
 
@@ -40,6 +43,22 @@ consteval InstructionSet DetectInstructionSet(){
         return InstructionSet::unknown;
     #endif
 }
+
+template<typename Option, typename... Options>
+concept OneOf = (std::same_as<Option, Options> || ...);
+
+
+
+template<typename DataType, InstructionSet instructions>
+struct VectorTraits;
+
+template<>
+struct VectorTraits<float, InstructionSet::fma>{
+    using type = __m256;
+
+};
+
+
 
 constexpr InstructionSet defaultInstructionSet = DetectInstructionSet();
 
