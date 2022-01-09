@@ -18,7 +18,9 @@ namespace nnd{
     template <typename RetType, typename ArgType>
     std::remove_pointer_t<RetType>* PtrCast(ArgType* ptrToCast){
         // allows either PtrCast<char> or PtrCast<char*> to work equivalently
-        // PtrCast<Type**> should still work properly, but why
+        // PtrCast<Type**> should still work properly, but why...
+        // coming back here a couple months later, I can now say I was a
+        // judgemental jerk
         using RetPtr = std::remove_pointer_t<RetType>*;
         if constexpr (std::is_const_v<RetType> && std::is_volatile_v<RetType>){
             return static_cast<RetPtr>(static_cast<const volatile void*>(ptrToCast));
