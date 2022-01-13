@@ -27,17 +27,67 @@ struct Op{
     static constexpr size_t Arity = arity;
 };
 
+//Needs special handling
 struct Negate : Op<1> {};
 
-struct Add : Op<2> {};
+struct Add : Op<2> {
+    static constexpr std::tuple validInstructionSets {
+        InstructionSet::avx,
+        InstructionSet::avx2,
+        InstructionSet::fma,
+        InstructionSet::avx512
+    };
 
-struct Subtract : Op<2> {};
+    template<VectorRequirements<__m256, float> DataVector>
+    DataVector operator()(DataVector& operand1, DataVector& operand2){
+        return {_mm256_add_ps(operand1.vec, operand2.vec)};
+    }
+};
 
-struct Multiply : Op<2> {};
+struct Subtract : Op<2> {
+    static constexpr std::tuple validInstructionSets {
+        InstructionSet::avx,
+        InstructionSet::avx2,
+        InstructionSet::fma,
+        InstructionSet::avx512
+    };
 
-struct Divide : Op<2> {};
+    template<VectorRequirements<__m256, float> DataVector>
+    DataVector operator()(DataVector& operand1, DataVector& operand2){
+        return {_mm256_sub_ps(operand1.vec, operand2.vec)};
+    }
+};
 
+struct Multiply : Op<2> {
+    static constexpr std::tuple validInstructionSets {
+        InstructionSet::avx,
+        InstructionSet::avx2,
+        InstructionSet::fma,
+        InstructionSet::avx512
+    };
 
+    template<VectorRequirements<__m256, float> DataVector>
+    DataVector operator()(DataVector& operand1, DataVector& operand2){
+        return {_mm256_mul_ps(operand1.vec, operand2.vec)};
+    }
+};
+
+struct Divide : Op<2> {
+    static constexpr std::tuple validInstructionSets {
+        InstructionSet::avx,
+        InstructionSet::avx2,
+        InstructionSet::fma,
+        InstructionSet::avx512
+    };
+
+    template<VectorRequirements<__m256, float> DataVector>
+    DataVector operator()(DataVector& operand1, DataVector& operand2){
+        return {_mm256_div_ps(operand1.vec, operand2.vec)};
+    }
+};
+
+template<typename DataVector, typename UnderlyingType, typename Intrinsic>
+concept VectorRequirements = std::same_as<UnderlyingType, typename DataVector::UnderlyingType> && std::same_as<Intrinsic, typename DataVector::VectorType>;
 
 struct FMA : Op<3>{
     static constexpr std::tuple validInstructionSets {
@@ -45,9 +95,9 @@ struct FMA : Op<3>{
         InstructionSet::avx512
     };
 
-    template<typename DataVector>
+    template<VectorRequirements<__m256, float> DataVector>
     DataVector operator()(DataVector& operand1, DataVector& operand2, DataVector& operand3){
-        
+        return DataVector{_mm256_fmadd_ps(operand1.vec, operand2.vec, operand3.vec)};
     }
 
 };
@@ -58,19 +108,15 @@ struct FMS : Op<3>{
         InstructionSet::avx512
     };
 
-    template<typename DataVector>
+    template<VectorRequirements<__m256, float> DataVector>
     DataVector operator()(DataVector& operand1, DataVector& operand2, DataVector& operand3){
-        
+        return DataVector{_mm256_fmsub_ps(operand1.vec, operand2.vec, operand3.vec)};
     }
 
 };
 
 template<typename Oper, size_t arity>
 concept Operation = std::is_base_of_v<Op<Oper::Arity>, Oper> && Oper::Arity == arity;
-
-constexpr bool test = Operation<Add, 2>;
-
-constexpr bool dontblowup = Operation<Negate, 1>;
 
 
 }

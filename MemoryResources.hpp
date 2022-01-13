@@ -27,6 +27,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <type_traits>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 #include "PointerManipulation.hpp"
 
@@ -36,7 +37,7 @@ template<typename TryLockable>
 [[nodiscard]] std::unique_lock<TryLockable> SpinAcquire(TryLockable& mutex){
     std::unique_lock retLock{mutex, std::try_to_lock};
     while(!retLock){
-        std::yield();
+        std::this_thread::yield();
         retLock.try_lock();
     }
     return std::move(retLock);
@@ -51,6 +52,7 @@ struct FreeListNode{
 };
 
 //Not fully implemented
+/*
 struct FreeListResource : std::pmr::memory_resource{
 
     void* do_allocate( std::size_t bytes, std::size_t alignment ) override{
@@ -148,7 +150,7 @@ struct FreeListResource : std::pmr::memory_resource{
     }
 
 };
-
+*/
 
 
 struct CacheNode{
@@ -578,7 +580,7 @@ struct LockPool{
         restockAmount{restockAmount},
         memoryChunks{upstream} {}
 
-    std::byte* Allocate(const auto& grabFromUpstream){
+    std::byte* Allocate(auto& grabFromUpstream){
 
         std::unique_lock poolLock = SpinAcquire(poolGuard);
 
@@ -624,7 +626,6 @@ struct LockPool{
     
     SingleListNode* stackHead{nullptr};
     std::mutex poolGuard;
-    std::atomic<size_t> waitingThreads{0};
     std::pmr::vector<MemoryChunk> memoryChunks;
 };
 
@@ -677,19 +678,33 @@ struct OversizedHandler{
 
 };
 
+
+template<size_t numberOfPools>
+constexpr std::array<LockPool, numberOfPools> MakePools(const size_t startSize, const size_t defaultRestock, std::pmr::memory_resource* upstream){
+
+    auto makePool = [&](const size_t idx){
+        return LockPool{startSize << idx, defaultRestock, upstream};
+    };
+
+    auto builder = [&]<size_t... Idx>(std::index_sequence<Idx...>){
+        return std::array{makePool(Idx)...};
+    };
+    return builder(std::make_index_sequence<numberOfPools>{});
+}
+
+
 struct LockingMultipool : std::pmr::memory_resource{
     static constexpr size_t startSize = 64;
     static constexpr size_t numberOfPools = 8;
-    static constexpr size_t biggestPoolSize = startSize<<(numberOfPools-1); //4k atm
+    static constexpr size_t biggestPoolSize = startSize<<(numberOfPools-1); //8k atm
 
     static constexpr size_t defaultAlignment = 64;
     static_assert(defaultAlignment>=sizeof(std::byte*)); //Implementation assumption
-    static constexpr size_t defaultRestock = 10; //can do something smarter later
+    static constexpr size_t defaultRestock = 16; //can do something smarter later
 
-    LockingMultipool(std::pmr::memory_resource* upstream = std::pmr::get_default_resource()): upstreamAlloc{upstream} {
-        memoryPools.reserve(numberOfPools);
+    LockingMultipool(std::pmr::memory_resource* upstream = std::pmr::get_default_resource()): upstreamAlloc{upstream}, memoryPools{MakePools<numberOfPools>(startSize, defaultRestock, upstream)} {
 
-        auto pullFromUpstream = [&] (const size_t chunkSize, std::pmr::vector<MemoryChunk>& poolChunks)->std::byte*{
+        auto pullFromUpstream = [&] (const size_t chunkSize, std::pmr::vector<MemoryChunk>& poolChunks) mutable->std::byte*{
             std::unique_lock lockMultipool{this->upstreamLock};
             std::byte* memory = static_cast<std::byte*>(this->upstreamAlloc.allocate_bytes(chunkSize, defaultAlignment));
             //This may cause the vector to reallocate, that reallocation MUST be guarded.
@@ -697,9 +712,8 @@ struct LockingMultipool : std::pmr::memory_resource{
             return memory;
         };
 
-        for (size_t i = 0; i<numberOfPools; i+=1){
-            memoryPools.emplace_back(startSize<<i, defaultRestock, upstreamAlloc.resource());
-            memoryPools.back().Restock(pullFromUpstream);
+        for (auto& pool : memoryPools){
+            pool.Restock(pullFromUpstream);
         }
     }
 
@@ -760,7 +774,7 @@ struct LockingMultipool : std::pmr::memory_resource{
     }
 
     void* DefaultAlloc(std::size_t bytes, std::size_t alignment){
-        auto pullFromUpstream = [&] (const size_t chunkSize, std::pmr::vector<MemoryChunk>& poolChunks) mutable ->std::byte*{
+        auto pullFromUpstream = [&, this] (const size_t chunkSize, std::pmr::vector<MemoryChunk>& poolChunks) mutable ->std::byte*{
             std::unique_lock lockMultipool{this->upstreamLock};
             std::byte* memory = static_cast<std::byte*>(this->upstreamAlloc.allocate_bytes(chunkSize, defaultAlignment));
             //This may cause the vector to reallocate, that reallocation MUST be guarded.
@@ -774,8 +788,8 @@ struct LockingMultipool : std::pmr::memory_resource{
             if (adjustedSize <= startSize){
                 return 0;
             }
-            constexpr size_t indexOffset = std::countl_zero(startSize);
-            return std::countl_zero(adjustedSize) - indexOffset;
+            constexpr size_t indexOffset = std::countr_zero(startSize);
+            return std::countr_zero(adjustedSize) - indexOffset;
         }();
 
         std::byte* chunk = memoryPools[poolIndex].Allocate(pullFromUpstream);
@@ -785,7 +799,7 @@ struct LockingMultipool : std::pmr::memory_resource{
 
     void* OveralignedAlloc(std::size_t bytes, std::size_t alignment){
 
-        auto pullFromUpstream = [&] (const size_t chunkSize, std::pmr::vector<MemoryChunk>& poolChunks) mutable ->std::byte*{
+        auto pullFromUpstream = [&, this] (const size_t chunkSize, std::pmr::vector<MemoryChunk>& poolChunks) mutable ->std::byte*{
             std::unique_lock lockMultipool{this->upstreamLock};
             std::byte* memory = static_cast<std::byte*>(this->upstreamAlloc.allocate_bytes(chunkSize, defaultAlignment));
             //This may cause the vector to reallocate, that reallocation MUST be guarded.
@@ -799,8 +813,8 @@ struct LockingMultipool : std::pmr::memory_resource{
             if (adjustedSize <= startSize){
                 return 0;
             }
-            constexpr size_t indexOffset = std::countl_zero(startSize);
-            return std::countl_zero(adjustedSize) - indexOffset;
+            constexpr size_t indexOffset = std::countr_zero(startSize);
+            return std::countr_zero(adjustedSize) - indexOffset;
         }();
 
         std::byte* chunkStart = memoryPools[poolIndex].Allocate(pullFromUpstream);
@@ -832,8 +846,8 @@ struct LockingMultipool : std::pmr::memory_resource{
             if (adjustedSize <= startSize){
                 return 0;
             }
-            constexpr size_t indexOffset = std::countl_zero(startSize);
-            return std::countl_zero(adjustedSize) - indexOffset;
+            constexpr size_t indexOffset = std::countr_zero(startSize);
+            return std::countr_zero(adjustedSize) - indexOffset;
         }();
 
         memoryPools[poolIndex].Deallocate(static_cast<std::byte*>(p));
@@ -846,8 +860,8 @@ struct LockingMultipool : std::pmr::memory_resource{
             if (adjustedSize <= startSize){
                 return 0;
             }
-            constexpr size_t indexOffset = std::countl_zero(startSize);
-            return std::countl_zero(adjustedSize) - indexOffset;
+            constexpr size_t indexOffset = std::countr_zero(startSize);
+            return std::countr_zero(adjustedSize) - indexOffset;
         }();
 
         std::byte* allocStart = static_cast<std::byte*>(p);
@@ -873,7 +887,7 @@ struct LockingMultipool : std::pmr::memory_resource{
     }
 
     void Release(){
-        auto returnToUpstream = [&] (std::pmr::vector<MemoryChunk>& poolChunks) mutable ->std::byte*{
+        auto returnToUpstream = [&, this] (std::pmr::vector<MemoryChunk>& poolChunks){
             for(auto& chunk : poolChunks){
                 this->upstreamAlloc.deallocate_bytes(chunk.start, chunk.size, defaultAlignment);
             }
@@ -884,7 +898,7 @@ struct LockingMultipool : std::pmr::memory_resource{
     }
 
     std::pmr::polymorphic_allocator<> upstreamAlloc;
-    std::pmr::vector<LockPool> memoryPools;
+    std::array<LockPool, numberOfPools> memoryPools;
     std::mutex upstreamLock;
     OversizedHandler oversizedAlloc{upstreamAlloc.resource(), upstreamLock};
     //Add in some sort of flexible memory cache to handle oversized allocs

@@ -13,6 +13,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include <concepts>
 #include <tuple>
+#include <functional>
+#include <utility>
 
 #include "SIMDInstructionSet.hpp"
 #include "SIMDOperations.hpp"
@@ -24,10 +26,14 @@ struct DataVectorBase{
     using DerivedClass = Derived;
 };
 
-template<typename DataType, InstructionSet instructions>
+template<typename DataType, InstructionSet instructions = defaultInstructionSet>
 struct DataVector : DataVectorBase<DataVector>{
     using UnderlyingType = DataType;
+    using VectorType = VectorIntrinsic_t<DataType, instructions>;
 
+    static constexpr instructionSet = instructions;
+
+    VectorType vec;
 };
 
 template<typename Op, typename... Operands>
@@ -45,7 +51,7 @@ struct VectorOperation : DataVectorBase<VectorOperation>{
 
 
 template <typename Func, typename Tuple>
-auto FoldTuple(Func&& func, Tuple&& tuple){
+constexpr auto FoldTuple(Func&& func, Tuple&& tuple){
 
     auto folder = [&](auto&&... args){
         return std::tuple{func(args)...};
@@ -55,21 +61,30 @@ auto FoldTuple(Func&& func, Tuple&& tuple){
 
 };
 
+template<typename Reducer, typename Arg1, typename Arg2, typename... Args>
+constexpr auto Reduce(Reducer&& reducer, Arg1&& arg1, Arg2&& arg2, Args&&... args){
+    if constexpr(sizeof...(args) == 0){
+        return std::invoke(std::forward<Reducer>(reducer), std::forward<Arg1>(arg1), std::forward<Arg2>(arg2)));
+    } else {
+        return Reduce(std::forward<Reducer>(reducer), 
+                      std::invoke(std::forward<Reducer>(reducer), std::forward<Arg1>(arg1), std::forward<Arg2>(arg2)),
+                      std::forward<Args>(args)...);
+    }
+}
+
+constexpr auto testReduce = Reduce(std::plus<>{}, 1, 3.1415, 'a');
+
 //This needs work- constrain so only Tuple is tuple-like?
-template <typename Init, typename Reduce, typename Tuple>
-auto ReduceTuple(Init&& init, Reduce&& reduce, Tuple&& tuple){
+template <typename Init, typename Reducer, typename Tuple>
+constexpr auto ReduceTuple(Init&& init, Reducer&& reducer, Tuple&& tuple){
 
     if constexpr (std::tuple_size_v<Tuple> == 0) return init;
 
-    auto reducer = [&](auto&& arg1, auto&& arg2, auto&&... args){
-        if constexpr(sizeof...(args) == 0){
-            return reduce(arg1, arg2);
-        } else{
-            return reducer(reduce(arg1, arg2), args...)
-        }
+    auto reduceFunc = [&]<typename...Args>(Args&&... args){
+        return Reduce(std::forward<Reducer>(reducer), std::forward<Args>(args)...);
     };
     
-    return std::apply(reducer, std::tuple_cat(std::forward_as_tuple<Init>(init), tuple);
+    return std::apply(reduceFunc, std::tuple_cat(std::forward_as_tuple<Init>(init), tuple);
 
 };
 

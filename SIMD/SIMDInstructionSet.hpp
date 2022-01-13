@@ -50,17 +50,22 @@ concept OneOf = (std::same_as<Option, Options> || ...);
 
 
 template<typename DataType, InstructionSet instructions>
-struct VectorTraits;
+struct VectorIntrinsic;
 
 template<>
-struct VectorTraits<float, InstructionSet::fma>{
+struct VectorIntrinsic<float, InstructionSet::fma>{
     using type = __m256;
 
 };
 
 
-
 constexpr InstructionSet defaultInstructionSet = DetectInstructionSet();
+
+template<typename DataType, InstructionSet instructions = defaultInstructionSet>
+using VectorIntrinsic_t = typename VectorIntrinsic<DataType, instructions>::type;
+
+template<typename DataType>
+using DefaultVector_t = typename VectorIntrinsic<DataType, defaultInstructionSet>::type;
 
 template<InstructionSet set>
 constexpr size_t vectorWidth = 0;

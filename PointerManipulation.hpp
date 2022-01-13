@@ -24,9 +24,9 @@ namespace nnd{
         using RetPtr = std::remove_pointer_t<RetType>*;
         if constexpr (std::is_const_v<RetType> && std::is_volatile_v<RetType>){
             return static_cast<RetPtr>(static_cast<const volatile void*>(ptrToCast));
-        } else if (std::is_const_v<RetType>){
+        } else if constexpr (std::is_const_v<RetType>){
             return static_cast<RetPtr>(static_cast<const void*>(ptrToCast));
-        } else if (std::is_volatile_v<RetType>){
+        } else if constexpr (std::is_volatile_v<RetType>){
             return static_cast<RetPtr>(static_cast<volatile void*>(ptrToCast));
         } else{
             return static_cast<RetPtr>(static_cast<void*>(ptrToCast));
