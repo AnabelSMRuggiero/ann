@@ -11,22 +11,14 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_SIMD_HPP
 #define NND_SIMD_HPP
 
-#include <cstddef>
+#include "SIMD/SIMDInstructionSet.hpp"
+#include "SIMD/SIMDOperations.hpp"
+#include "SIMD/SIMDVector.hpp"
+#include "SIMD/VectorSpan.hpp"
 
 namespace nnd {
 
 
-
-
-// x*y + z
-
-/*
-
-    x*y -> BinaryVectorOperation<vector, vector, multiply> tmp
-
-    tmp + z -> BinaryVectorOperation<BinaryVectorOperation<vector, vector, multiply>, vector, add> res
-               TernaryVectorOperation<
-*/
 
 }
 

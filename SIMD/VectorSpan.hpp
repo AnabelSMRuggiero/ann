@@ -108,6 +108,8 @@ struct vector_span{
     using reference = VectorReference<ElementType, instructions, align>;
     using const_reference = VectorReference<const ElementType, instructions, align>;
 
+    using excess_type = nnd::AlignedSpan<ElementType, align>;
+
     static constexpr size_t alignment = align;
     static constexpr InstructionSet instructionSet = instructions;
 
@@ -139,10 +141,20 @@ struct vector_span{
         fullExtent(dataToView.size())
         {};
 
+    vector_span(nnd::AlignedSpan<ElementType, alignment>& dataToView) requires (!std::is_const_v<ElementType>):
+        data(dataToView.begin()),
+        fullExtent(dataToView.size())
+        {};
+
+    vector_span(const nnd::AlignedSpan<ElementType, alignment>& dataToView) requires std::is_const_v<ElementType>:
+        data(dataToView.begin()),
+        fullExtent(dataToView.size())
+        {};
+
     vector_span(const vector_span<std::remove_cv_t<ElementType>, instructionSet, alignment>& spanToCopy) requires std::is_const_v<ElementType>: data(spanToCopy.begin()), fullExtent(spanToCopy.size()){};
 
     template<typename ConvertableToElement>
-    vector_span(const nnd::AlignedPtr<ConvertableToElement, alignment> spanBegin, const size_t extent): data(ElementType*(spanBegin)), fullExtent(extent){};
+    vector_span(const nnd::AlignedPtr<ConvertableToElement, alignment> spanBegin, const size_t extent): data(static_cast<ElementType*>(spanBegin)), fullExtent(extent){};
 
     iterator begin() const { return std::assume_aligned<alignment>(data); }
 
@@ -176,6 +188,6 @@ struct vector_span{
 
 
 template <typename ValueType, ann::InstructionSet instructions, std::size_t alignment>
-inline constexpr bool std::ranges::enable_borrowed_range<nnd::AlignedSpan<ValueType, instructions, alignment>> = true;
+inline constexpr bool std::ranges::enable_borrowed_range<ann::vector_span<ValueType, instructions, alignment>> = true;
 
 #endif

@@ -169,7 +169,7 @@ struct AlignedPtr{
     AlignedPtr(const AlignedPtr&) = default;
 
     AlignedPtr(const AlignedPtr<std::remove_const_t<ValueType>, align>& other) requires std::is_const_v<ValueType>:
-        ptr{other.ptr}
+        ptr{static_cast<ValueType*>(other)}
         {}
 
     private:
@@ -265,8 +265,8 @@ struct AlignedSpan{
     template<typename ConvertableToElement>
     AlignedSpan(const DynamicArray<ConvertableToElement, alignment>& dataToView): data(dataToView.begin()), extent(dataToView.size()){};
 
-    template<IsNot<AlignedSpan> ConvertableToElement>
-    AlignedSpan(const AlignedSpan<ConvertableToElement, alignment>& spanToCopy): data(spanToCopy.begin()), extent(spanToCopy.size()){};
+    //template<IsNot<AlignedSpan> ConvertableToElement>
+    AlignedSpan(const AlignedSpan<std::remove_const_t<ElementType>, alignment>& spanToCopy) requires std::is_const_v<ElementType>: data(spanToCopy.begin()), extent(spanToCopy.size()){};
 
     
     AlignedSpan(AlignedPtr<ElementType, alignment> spanBegin, const size_t extent): data(static_cast<ElementType*>(spanBegin)), extent(extent){};

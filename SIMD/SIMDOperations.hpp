@@ -27,7 +27,35 @@ template<typename DataType, InstructionSet instructions = defaultInstructionSet>
 struct DataVector;
 
 template<typename DataVector, typename UnderlyingType, typename Intrinsic>
-concept VectorRequirements = std::same_as<UnderlyingType, typename DataVector::UnderlyingType> && std::same_as<Intrinsic, typename DataVector::VectorType>;
+concept VectorRequirements = std::same_as<UnderlyingType, std::remove_const_t<typename DataVector::UnderlyingType>> && std::same_as<Intrinsic, typename DataVector::VectorType>;
+
+template<InstructionSet First, InstructionSet... Rest>
+consteval InstructionSet SelectInstructions(){
+    auto equalToFirst = [](auto next)->bool{
+        return (First == next);
+    };
+    auto all = [](auto... bools){
+        return (... && bools);
+    };
+    if constexpr (sizeof...(Rest) == 0){
+        return First;
+    } else if constexpr ( all(equalToFirst(Rest)...)){
+        return First;
+    } else {
+        InstructionSet::unknown;
+    }
+}
+
+template<typename VectorType, typename... VectorTypes>
+    requires (VectorRequirements<VectorTypes, std::remove_const_t<typename VectorType::UnderlyingType>, typename VectorType::VectorType> && ...)
+struct OperationReturn{
+    static constexpr InstructionSet instructions{SelectInstructions<VectorType::instructionSet, VectorTypes::instructionSet...>()};
+    static_assert(instructions != InstructionSet::unknown);
+    using type = DataVector<std::remove_const_t<typename VectorType::UnderlyingType>, instructions>;
+};
+
+template<typename VectorType, typename... VectorTypes>
+using OperationReturn_t = typename OperationReturn<VectorType, VectorTypes...>::type;
 
 
 template<size_t arity>
@@ -45,7 +73,7 @@ struct Zero : Op<0> {
 
     template<VectorRequirements<float, __m256> RequirementsTag>
     auto operator()(RequirementsTag) const {
-        return DataVector<typename RequirementsTag::UnderlyingType, RequirementsTag::instructionSet>{_mm256_setzero_ps()};
+        return OperationReturn_t<RequirementsTag>{_mm256_setzero_ps()};
     }
 };
 
@@ -61,13 +89,13 @@ struct Load : Op<1> {
     };
 
     template<VectorRequirements<float, __m256> VectorRef>
-    DataVector<float, VectorRef::instructionSet> operator()(VectorRef& operand1) const {
+    OperationReturn_t<VectorRef> operator()(VectorRef& operand1) const {
         return {_mm256_loadu_ps(operand1.dataPtr)};
     }
 
     template<VectorRequirements<float, __m256> VectorRef>
         requires (VectorRef::alignment >= 32)
-    DataVector<float, VectorRef::instructionSet> operator()(VectorRef& operand1) const {
+    OperationReturn_t<VectorRef> operator()(VectorRef& operand1) const {
         return {_mm256_load_ps(operand1.dataPtr)};
     }
 };
@@ -105,9 +133,9 @@ struct Add : Op<2> {
         InstructionSet::avx512
     };
 
-    template<VectorRequirements<float, __m256> DataVector>
-    DataVector operator()(DataVector& operand1, DataVector& operand2) const {
-        return DataVector{_mm256_add_ps(operand1.vec, operand2.vec)};
+    template<VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
+    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector& operand1, const RHSVector& operand2) const {
+        return OperationReturn_t<LHSVector, RHSVector>{_mm256_add_ps(operand1.vec, operand2.vec)};
     }
 };
 
@@ -119,9 +147,9 @@ struct Subtract : Op<2> {
         InstructionSet::avx512
     };
 
-    template<VectorRequirements<float, __m256> DataVector>
-    DataVector operator()(DataVector& operand1, DataVector& operand2) const {
-        return DataVector{_mm256_sub_ps(operand1.vec, operand2.vec)};
+    template<VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
+    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector& operand1, const RHSVector& operand2) const {
+        return OperationReturn_t<LHSVector, RHSVector>{_mm256_sub_ps(operand1.vec, operand2.vec)};
     }
 };
 
@@ -133,9 +161,9 @@ struct Multiply : Op<2> {
         InstructionSet::avx512
     };
 
-    template<VectorRequirements<float, __m256> DataVector>
-    DataVector operator()(DataVector& operand1, DataVector& operand2) const {
-        return DataVector{_mm256_mul_ps(operand1.vec, operand2.vec)};
+    template<VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
+    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector& operand1, const RHSVector& operand2) const {
+        return OperationReturn_t<LHSVector, RHSVector>{_mm256_mul_ps(operand1.vec, operand2.vec)};
     }
 };
 
@@ -147,9 +175,9 @@ struct Divide : Op<2> {
         InstructionSet::avx512
     };
 
-    template<VectorRequirements<float, __m256> DataVector>
-    DataVector operator()(DataVector& operand1, DataVector& operand2) const {
-        return DataVector{_mm256_div_ps(operand1.vec, operand2.vec)};
+    template<VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
+    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector& operand1, const RHSVector& operand2) const {
+        return OperationReturn_t<LHSVector, RHSVector>{_mm256_div_ps(operand1.vec, operand2.vec)};
     }
 };
 
@@ -179,9 +207,9 @@ struct FMA : Op<3>{
         InstructionSet::avx512
     };
 
-    template<VectorRequirements<float, __m256> DataVector>
-    DataVector operator()(const DataVector& operand1, const DataVector& operand2, const DataVector& operand3) const {
-        return DataVector{_mm256_fmadd_ps(operand1.vec, operand2.vec, operand3.vec)};
+    template<VectorRequirements<float, __m256> FirstVector, VectorRequirements<float, __m256> SecondVector, VectorRequirements<float, __m256> ThirdVector>
+    auto operator()(const FirstVector& operand1, const SecondVector& operand2, const ThirdVector& operand3) const {
+        return OperationReturn_t<FirstVector, SecondVector, ThirdVector>{_mm256_fmadd_ps(operand1.vec, operand2.vec, operand3.vec)};
     }
 
 };
@@ -192,9 +220,9 @@ struct FMS : Op<3>{
         InstructionSet::avx512
     };
 
-    template<VectorRequirements<float, __m256> DataVector>
-    DataVector operator()(DataVector& operand1, DataVector& operand2, DataVector& operand3) const {
-        return DataVector{_mm256_fmsub_ps(operand1.vec, operand2.vec, operand3.vec)};
+    template<VectorRequirements<float, __m256> FirstVector, VectorRequirements<float, __m256> SecondVector, VectorRequirements<float, __m256> ThirdVector>
+    auto operator()(const FirstVector& operand1, const SecondVector& operand2, const ThirdVector& operand3) const {
+        return OperationReturn_t<FirstVector, SecondVector, ThirdVector>{_mm256_fmsub_ps(operand1.vec, operand2.vec, operand3.vec)};
     }
 
 };
