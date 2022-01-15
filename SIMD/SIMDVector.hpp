@@ -18,6 +18,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include "SIMDInstructionSet.hpp"
 #include "SIMDOperations.hpp"
+#include "../Type.hpp"
 
 namespace ann{
 
@@ -26,25 +27,77 @@ struct DataVectorBase{
     using DerivedClass = Derived;
 };
 
-template<typename DataType, InstructionSet instructions = defaultInstructionSet>
-struct DataVector : DataVectorBase<DataVector>{
+template<typename DataType, InstructionSet instructions>
+struct RequirementsTag{
     using UnderlyingType = DataType;
     using VectorType = VectorIntrinsic_t<DataType, instructions>;
+    static constexpr InstructionSet instructionSet = instructions;
+};
 
-    static constexpr instructionSet = instructions;
+template<typename DataType, InstructionSet instructions>
+struct DataVector : DataVectorBase<DataVector<DataType, instructions>>{
+    using UnderlyingType = DataType;
+    using VectorType = VectorIntrinsic_t<DataType, instructions>;
+    using Requirements = RequirementsTag<DataType, instructions>;
+    
+    static constexpr Requirements requireTag{};
+    static constexpr InstructionSet instructionSet = instructions;
+
+    DataVector(): DataVector(Zero{}(requireTag)) {};
+
+    DataVector(const DataVector&) = default;
+
+    DataVector(const VectorType& vec): vec{vec} {};
+
+    template<typename OtherVector>
+        requires (!std::same_as<OtherVector, DataVector>)
+    DataVector(const DataVectorBase<OtherVector>& other): vec{Evaluate(static_cast<const OtherVector&>(other)).vec} {}
+
+    template<typename OtherVector>
+    DataVector& operator=(const DataVectorBase<OtherVector>& expression){
+        vec = Evaluate(static_cast<const OtherVector&>(expression)).vec;
+        return *this;
+    }
+
 
     VectorType vec;
 };
 
+template<typename DataType, InstructionSet instructions = defaultInstructionSet, size_t align = alignof(DataType)>
+struct VectorReference : DataVectorBase<VectorReference<DataType, instructions, align>>{
+    using UnderlyingType = DataType;
+    using VectorType = VectorIntrinsic_t<DataType, instructions>;
+
+    static constexpr size_t alignment = align;
+    static constexpr InstructionSet instructionSet = instructions;
+
+    VectorReference() = default;
+
+    VectorReference(DataType* dataPtr): dataPtr{dataPtr} {}
+
+    VectorReference(nnd::AlignedPtr<DataType, alignment> alignedPtr): dataPtr{DataType*(alignedPtr)} {}
+
+    VectorReference(const VectorReference&) = default;
+
+    
+    template<typename OtherVector>
+        requires (!std::is_const_v<DataType>)
+    VectorReference& operator=(const DataVectorBase<OtherVector>& expression){
+        Store{}(dataPtr, Evaluate(static_cast<const OtherVector&>(expression)).vec);
+    }
+
+    DataType* dataPtr;
+};
+
 template<typename Op, typename... Operands>
     requires Operation<Op, sizeof...(Operands)>
-struct VectorOperation : DataVectorBase<VectorOperation>{
+struct VectorOperation : DataVectorBase<VectorOperation<Op, Operands...>>{
     
-    std::tuple<Operands&&...> operands;
+    std::tuple<const Operands&...> operands;
     
-    VectorOperation(Op, Operands&&... operands): operands{std::forward_as_tuple<Operands...>(operands...)} {}
+    VectorOperation(Op, const Operands&... operands): operands{operands...} {}
 
-    VectorOperation(Op, std::tuple<Operands&&...> operands): operands{std::move(operands)} {}
+    VectorOperation(Op, std::tuple<const Operands&...> operands): operands{std::move(operands)} {}
 
 };
 
@@ -64,7 +117,7 @@ constexpr auto FoldTuple(Func&& func, Tuple&& tuple){
 template<typename Reducer, typename Arg1, typename Arg2, typename... Args>
 constexpr auto Reduce(Reducer&& reducer, Arg1&& arg1, Arg2&& arg2, Args&&... args){
     if constexpr(sizeof...(args) == 0){
-        return std::invoke(std::forward<Reducer>(reducer), std::forward<Arg1>(arg1), std::forward<Arg2>(arg2)));
+        return std::invoke(std::forward<Reducer>(reducer), std::forward<Arg1>(arg1), std::forward<Arg2>(arg2));
     } else {
         return Reduce(std::forward<Reducer>(reducer), 
                       std::invoke(std::forward<Reducer>(reducer), std::forward<Arg1>(arg1), std::forward<Arg2>(arg2)),
@@ -84,13 +137,18 @@ constexpr auto ReduceTuple(Init&& init, Reducer&& reducer, Tuple&& tuple){
         return Reduce(std::forward<Reducer>(reducer), std::forward<Args>(args)...);
     };
     
-    return std::apply(reduceFunc, std::tuple_cat(std::forward_as_tuple<Init>(init), tuple);
+    return std::apply(reduceFunc, std::tuple_cat(std::forward_as_tuple<Init>(init), tuple));
 
 };
 
 template<typename DataType, InstructionSet instructions>
 const auto& Evaluate(const DataVector<DataType, instructions>& vec){
     return vec;
+}
+
+template<typename DataType, InstructionSet instructions, size_t align>
+auto Evaluate(const VectorReference<DataType, instructions, align>& vec){
+    return Load{}(vec);
 }
 
 template<typename Op, typename... Operands>
@@ -115,7 +173,7 @@ auto MakeOperation(Operation, const DataVectorBase<LHSDerived>& lhsOperand, cons
 };
 
 template<typename Derived>
-auto operator+(const DataVectorBase<Derived>& operand){
+auto operator-(const DataVectorBase<Derived>& operand){
 
     return VectorOperation{Negate{}, static_cast<const Derived&>(operand)};
 
@@ -135,7 +193,7 @@ auto operator+(const DataVectorBase<VectorOperation<Multiply, FirstDerived, Seco
 
     return VectorOperation{FMA{},
                            tuple_cat(static_cast<const LHSDerived&>(lhsOperand).operands,
-                                     std::tuple{static_cast<const ThirdDerived&>(rhsOperand)})
+                                     std::tuple<const ThirdDerived&>{static_cast<const ThirdDerived&>(rhsOperand)})
                           };
 }
 
@@ -158,14 +216,14 @@ auto operator-(const DataVectorBase<VectorOperation<Multiply, FirstDerived, Seco
 }
 
 template<typename LHSDerived, typename RHSDerived>
-auto operator*(DataVectorBase<LHSDerived>& lhsOperand, DataVectorBase<RHSDerived>& rhsOperand){
+auto operator*(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return MakeOperation(Multiply{}, lhsOperand, rhsOperand);
 
 }
 
 template<typename LHSDerived, typename RHSDerived>
-auto operator/(DataVectorBase<LHSDerived>& lhsOperand, DataVectorBase<RHSDerived>& rhsOperand){
+auto operator/(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return MakeOperation(Divide{}, lhsOperand, rhsOperand);
 

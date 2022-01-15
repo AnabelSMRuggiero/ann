@@ -58,6 +58,17 @@ struct VectorIntrinsic<float, InstructionSet::fma>{
 
 };
 
+template<>
+struct VectorIntrinsic<float, InstructionSet::avx2>{
+    using type = __m256;
+
+};
+
+template<>
+struct VectorIntrinsic<float, InstructionSet::avx>{
+    using type = __m256;
+
+};
 
 constexpr InstructionSet defaultInstructionSet = DetectInstructionSet();
 
