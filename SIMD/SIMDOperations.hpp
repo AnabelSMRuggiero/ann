@@ -11,6 +11,11 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_SIMDOPERATIONS_HPP
 #define NND_SIMDOPERATIONS_HPP
 
+#ifdef __GNUC__
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
+
 #include <cstddef>
 #include <type_traits>
 #include <concepts>
@@ -236,5 +241,9 @@ namespace simd_ops{
 }
 
 }
+
+#ifdef __GNUC__
+    #pragma GCC diagnostic pop
+#endif
 
 #endif

@@ -16,6 +16,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../Type.hpp"
 #include "../DataSerialization.hpp"
 #include "../DataDeserialization.hpp"
+#include "../SIMD/VectorSpan.hpp"
 
 namespace nnd{
 
@@ -25,6 +26,8 @@ struct DataBlockIterator{
     using value_type = AlignedSpan<ElementType, align>;
     using difference_type = std::ptrdiff_t;
     using reference = AlignedSpan<ElementType, align>;
+    using vector_view = ann::vector_span<value_type, ann::defaultInstructionSet, align>;
+    using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, align>;
 
     static constexpr size_t alignment = align;
 
@@ -107,7 +110,9 @@ struct DataBlock{
     using value_type = ElementType;
     using DataView = AlignedSpan<ElementType, align>;
     using ConstDataView = AlignedSpan<const ElementType, align>;
-
+    
+    using vector_view = ann::vector_span<value_type, ann::defaultInstructionSet, align>;
+    using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, align>;
     
     using iterator = DataBlockIterator<ElementType, align>;
     using const_iterator = DataBlockIterator<const ElementType, align>;

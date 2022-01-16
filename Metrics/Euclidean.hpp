@@ -22,6 +22,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include "../Type.hpp"
 #include "../MemoryResources.hpp"
+#include "../SIMD.hpp"
 
 namespace nnd{
 
@@ -43,6 +44,53 @@ RetType EuclideanNorm(const VectorA& pointA, const VectorB& pointB){
 };
 
 
+template<size_t numPointsTo>
+void BatchEuclideanNorm(const ann::vector_span<const float> pointFrom,
+                        std::span<const ann::vector_span<const float>, numPointsTo> pointsTo,
+                        std::span<float, numPointsTo> resultLocation) noexcept {
+
+    
+    std::array<ann::DataVector<float>, numPointsTo> accumulators;
+
+
+
+    /* vvv core loop vvv */
+
+    for (size_t i = 0; i<pointFrom.size(); i+=1){
+        for(size_t j = 0; j<numPointsTo; j+=1){
+            ann::DataVector<float> diff = pointsTo[j][i] - pointFrom[i];
+            accumulators[j] += diff*diff;
+        }
+    }
+
+    /* ^^^ core loop ^^^ */
+
+
+
+    for(size_t j = 0; j<numPointsTo; j+=1) resultLocation[j] = ann::simd_ops::reduce(accumulators[j]);
+
+    //Take care of the excess. I might be able to remove this at some point
+    ann::vector_span<const float>::excess_type excessFrom = pointFrom.excess();
+    if (excessFrom.size() > 0){
+        std::array<ann::vector_span<const float>::excess_type, numPointsTo> excessesTo;
+        for(size_t j = 0; j<numPointsTo; j+=1) excessesTo[j] = pointsTo[j].excess();
+
+        for (size_t i = 0; i<excessFrom.size(); i += 1){
+            for (size_t j = 0; j<numPointsTo; j+=1){
+                float diff = excessesTo[j][i] - excessFrom[i];
+                resultLocation[j] += diff*diff;
+            }
+        }
+    }
+
+    
+    
+    //Last I checked, this emits an avx sqrt on clang
+    for (auto& res: resultLocation) res = std::sqrt(res);
+
+
+}
+/*
 template<size_t numPointsTo>
 void BatchEuclideanNorm(const AlignedSpan<const float> pointB,
                         std::span<const AlignedSpan<const float>, numPointsTo> pointsTo,
@@ -118,7 +166,7 @@ void BatchEuclideanNorm(const AlignedSpan<const float> pointB,
 
 
 }
-
+*/
 
 
 

@@ -173,14 +173,11 @@ struct vector_span{
     nnd::AlignedSpan<const ElementType, alignment> excess() const {
         return nnd::AlignedSpan<const ElementType, alignment>{nnd::MakeAlignedPtr(data + fullExtent - fullExtent % elementsPerVector, *this), fullExtent % elementsPerVector};
     }
-    
-    template<typename Alloc = std::allocator<ElementType>>
-    explicit operator std::vector<ElementType, Alloc>(){
-        std::vector<std::remove_cv_t<ElementType>, Alloc> retVec(this->size());
-        std::copy(this->begin(), this->end(), retVec.begin());
 
-        return retVec;
+    explicit operator nnd::AlignedSpan<const ElementType, alignment>() const{
+        return nnd::AlignedSpan<const ElementType, alignment>{nnd::MakeAlignedPtr(data, *this), fullExtent};
     }
+    
 
 };
 
