@@ -39,7 +39,7 @@ consteval InstructionSet SelectInstructions(){
     };
     if constexpr (sizeof...(Rest) == 0){
         return First;
-    } else if constexpr ( all(equalToFirst(Rest)...)){
+    } else if ( all(equalToFirst(Rest)...)){
         return First;
     } else {
         InstructionSet::unknown;
@@ -89,13 +89,13 @@ struct Load : Op<1> {
     };
 
     template<VectorRequirements<float, __m256> VectorRef>
-    OperationReturn_t<VectorRef> operator()(VectorRef& operand1) const {
+    OperationReturn_t<VectorRef> operator()(const VectorRef& operand1) const {
         return {_mm256_loadu_ps(operand1.dataPtr)};
     }
 
     template<VectorRequirements<float, __m256> VectorRef>
         requires (VectorRef::alignment >= 32)
-    OperationReturn_t<VectorRef> operator()(VectorRef& operand1) const {
+    OperationReturn_t<VectorRef> operator()(const VectorRef& operand1) const {
         return {_mm256_load_ps(operand1.dataPtr)};
     }
 };

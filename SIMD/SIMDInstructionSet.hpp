@@ -21,11 +21,11 @@ namespace ann{
 template <typename Func, typename Tuple>
 constexpr auto FoldTuple(Func&& func, Tuple&& tuple){
 
-    auto folder = [&](auto&&... args){
-        return std::tuple{func(args)...};
+    auto folder = [&]<typename... Args>(Args&&... args){
+        return std::tuple{func(std::forward<Args>(args))...};
     };
     
-    return std::apply(folder, tuple);
+    return std::apply(folder, std::forward<Tuple>(tuple));
 
 };
 
