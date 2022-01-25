@@ -219,6 +219,20 @@ struct FMA : Op<3>{
 
 };
 
+struct FNMA : Op<3>{
+    static constexpr std::tuple validInstructionSets {
+        InstructionSet::fma,
+        InstructionSet::avx512
+    };
+
+    template<VectorRequirements<float, __m256> FirstVector, VectorRequirements<float, __m256> SecondVector, VectorRequirements<float, __m256> ThirdVector>
+    auto operator()(const FirstVector& operand1, const SecondVector& operand2, const ThirdVector& operand3) const {
+        
+        return OperationReturn_t<FirstVector, SecondVector, ThirdVector>{_mm256_fnmadd_ps(operand1.vec, operand2.vec, operand3.vec)};
+    }
+
+};
+
 struct FMS : Op<3>{
     static constexpr std::tuple validInstructionSets {
         InstructionSet::fma,
@@ -238,6 +252,8 @@ concept Operation = std::is_base_of_v<Op<Oper::Arity>, Oper> && Oper::Arity == a
 
 namespace simd_ops{
     inline static constexpr VectorReduce reduce{};
+    inline static constexpr Load load{};
+    inline static constexpr Store store{};
 }
 
 }

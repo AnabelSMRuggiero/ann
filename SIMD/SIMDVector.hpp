@@ -83,7 +83,7 @@ struct VectorReference : DataVectorBase<VectorReference<DataType, instructions, 
     template<typename OtherVector>
         requires (!std::is_const_v<DataType>)
     VectorReference& operator=(const DataVectorBase<OtherVector>& expression){
-        Store{}(dataPtr, Evaluate(static_cast<const OtherVector&>(expression)).vec);
+        simd_ops::store(dataPtr, Evaluate(static_cast<const OtherVector&>(expression)).vec);
     }
 
     DataType* dataPtr;
@@ -112,7 +112,7 @@ const auto& Evaluate(const DataVector<DataType, instructions>& vec){
 
 template<typename DataType, InstructionSet instructions, size_t align>
 auto Evaluate(const VectorReference<DataType, instructions, align>& vec){
-    return Load{}(vec);
+    return simd_ops::load(vec);
 }
 
 template<typename Op, typename... Operands>
@@ -161,6 +161,17 @@ auto operator+(const DataVectorBase<VectorOperation<Multiply, FirstDerived, Seco
                           };
 }
 
+// Clang doesn't try reversing operands to see if the fma contraction version is more specialized
+template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
+auto operator+(const DataVectorBase<FirstDerived>& lhsOperand, const DataVectorBase<VectorOperation<Multiply, SecondDerived, ThirdDerived>>& rhsOperand){
+    using RHSDerived = VectorOperation<Multiply, SecondDerived, ThirdDerived>;
+
+    return VectorOperation{FMA{},
+                           tuple_cat(static_cast<const RHSDerived&>(rhsOperand).operands,
+                                     std::tuple<const ThirdDerived&>{static_cast<const FirstDerived&>(lhsOperand)})
+                          };
+}
+
 template<typename LHSDerived, typename RHSDerived>
 auto operator-(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
@@ -176,6 +187,17 @@ auto operator-(const DataVectorBase<VectorOperation<Multiply, FirstDerived, Seco
     return VectorOperation{FMS{},
                            tuple_cat(static_cast<const LHSDerived&>(lhsOperand).operands,
                                      std::tuple{static_cast<const ThirdDerived&>(rhsOperand)})
+                          };
+}
+
+// Clang doesn't try reversing operands to see if the fms contraction version is more specialized
+template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
+auto operator-(const DataVectorBase<FirstDerived>& lhsOperand, const DataVectorBase<VectorOperation<Multiply, SecondDerived, ThirdDerived>>& rhsOperand){
+    using RHSDerived = VectorOperation<Multiply, SecondDerived, ThirdDerived>;
+
+    return VectorOperation{FNMA{},
+                           tuple_cat(static_cast<const RHSDerived&>(rhsOperand).operands,
+                                     std::tuple<const ThirdDerived&>{static_cast<const FirstDerived&>(lhsOperand)})
                           };
 }
 
