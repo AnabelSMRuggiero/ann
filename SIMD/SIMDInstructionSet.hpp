@@ -13,6 +13,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include <cstddef>
 #include <concepts>
+#include <utility>
+#include <functional>
 
 #include <immintrin.h>
 
