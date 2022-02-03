@@ -16,10 +16,13 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <memory>
 #include <new>
 #include <type_traits>
+#include <vector>
 
 std::allocator<int> test{};
 
 namespace ann {
+
+std::align_val_t operator ""_a(std::size_t);
 
 template<typename Type, std::align_val_t align>
 struct aligned_allocator {
@@ -29,7 +32,22 @@ struct aligned_allocator {
     using difference_type = std::ptrdiff_t;
     using propagate_on_container_move_assignment = std::true_type;
 
+    template<typename RebindType>
+    struct rebind {
+        using other = aligned_allocator<RebindType, align>;
+    };
+
     static constexpr std::align_val_t alignment = align;
+
+    aligned_allocator() = default;
+
+    constexpr aligned_allocator(const aligned_allocator&) noexcept = default;
+    template<typename Other>
+    constexpr aligned_allocator(const aligned_allocator<Other, align>&) noexcept {}
+
+    constexpr operator=(const aligned_allocator&) noexcept = default;
+
+    ~aligned_allocator() = default;
 
     Type *allocate(std::size_t numberOfElements, std::align_val_t allocAlign = alignment) {
         void *allocatedMemory = ::operator new(numberOfElements * sizeof(Type), allocAlign);
@@ -40,6 +58,9 @@ struct aligned_allocator {
         ::operator delete(returningMemory, numberOfElements * sizeof(Type), allocAlign);
     }
 };
+
+std::allocator_traits<aligned_allocator<int, 32_a>> testTraits{};
+std::vector<int, aligned_allocator<int, std::align_val_t{32}>> testVec{};
 
 template<typename Allocator>
 concept base_allocator_functionality = requires(Allocator alloc) {
