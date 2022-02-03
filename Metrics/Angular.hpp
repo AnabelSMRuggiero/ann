@@ -18,7 +18,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../Type.hpp"
 #include "../SIMD.hpp"
 
-namespace nnd{
+namespace ann{
 
 //Assumes data is already normalized
 template<typename VectorA, typename VectorB, typename RetType=double>

@@ -1,3 +1,9 @@
+
+#ifndef ANN_TEMPLATEMANIPULATION_HPP
+#define ANN_TEMPLATEMANIPULATION_HPP
+
+namespace ann{
+
 template<typename... Types>
 struct parameter_pack{
 
@@ -76,3 +82,7 @@ consteval auto bind_to_back(template_parameter<TemplateParam>, parameter_pack<Pa
 
 template<template <typename...> typename TemplateParam, typename... Pack>
 using apply_pack_t = typename decltype(apply_pack(template_parameter<TemplateParam>{}, parameter_pack<Pack...>{}))::type;
+
+}
+
+#endif

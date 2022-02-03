@@ -17,7 +17,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 
 
-namespace nnd{
+namespace ann{
 
 
 template<size_t p, typename DataEntry, typename RetValue = double>

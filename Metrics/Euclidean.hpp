@@ -24,7 +24,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../MemoryResources.hpp"
 #include "../SIMD.hpp"
 
-namespace nnd{
+namespace ann{
 
 template<typename VectorA, typename VectorB, typename RetType=double>
 RetType EuclideanNorm(const VectorA& pointA, const VectorB& pointB){

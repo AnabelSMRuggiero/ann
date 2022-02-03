@@ -8,12 +8,12 @@ Please refer to the project repo for any updates regarding liscensing.
 https://github.com/AnabelSMRuggiero/NNDescent.cpp
 */
 
-#ifndef NND_MULTITRANSFORM_HPP
-#define NND_MULTITRANSFORM_HPP
+#ifndef ANN_NESTEDRANGES_HPP
+#define ANN_NESTEDRANGES_HPP
 
 #include <ranges>
 
-namespace nnd{
+namespace ann{
 
 template<typename T>
 consteval size_t RangeRank(){
@@ -31,10 +31,8 @@ consteval size_t RangeRank(){
 template<typename Range>
 constexpr size_t rangeRank = RangeRank<Range>();
 
-template<std::ranges::range Range>
-void MultiTransform(){
-    
-}
+
+
 
 }
 
