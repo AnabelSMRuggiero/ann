@@ -18,11 +18,15 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <type_traits>
 #include <vector>
 
-std::allocator<int> test{};
-
 namespace ann {
 
-std::align_val_t operator ""_a(std::size_t);
+inline namespace udl {
+
+constexpr std::align_val_t operator""_a(unsigned long long alignment) { return static_cast<std::align_val_t>(alignment); }
+
+} // namespace udl
+
+
 
 template<typename Type, std::align_val_t align>
 struct aligned_allocator {
@@ -45,22 +49,41 @@ struct aligned_allocator {
     template<typename Other>
     constexpr aligned_allocator(const aligned_allocator<Other, align>&) noexcept {}
 
-    constexpr operator=(const aligned_allocator&) noexcept = default;
+    constexpr aligned_allocator& operator=(const aligned_allocator&) noexcept = default;
 
     ~aligned_allocator() = default;
 
-    Type *allocate(std::size_t numberOfElements, std::align_val_t allocAlign = alignment) {
-        void *allocatedMemory = ::operator new(numberOfElements * sizeof(Type), allocAlign);
-        return static_cast<Type *>(allocatedMemory);
+    Type* allocate(std::size_t numberOfElements, std::align_val_t allocAlign) {
+        allocAlign = std::max(allocAlign, alignment);
+        void* allocatedMemory = ::operator new(numberOfElements * sizeof(Type), allocAlign);
+        return std::assume_aligned<static_cast<std::size_t>(alignment)>(static_cast<Type*>(allocatedMemory));
     }
 
-    void deallocate(Type *returningMemory, std::size_t numberOfElements, std::align_val_t allocAlign = alignment) {
+    Type* allocate(std::size_t numberOfElements) {
+        void* allocatedMemory = ::operator new(numberOfElements * sizeof(Type), alignment);
+        return std::assume_aligned<static_cast<std::size_t>(alignment)>(static_cast<Type*>(allocatedMemory));
+    }
+
+    void deallocate(Type* returningMemory, std::size_t numberOfElements, std::align_val_t allocAlign) noexcept {
+        allocAlign = std::max(allocAlign, alignment);
         ::operator delete(returningMemory, numberOfElements * sizeof(Type), allocAlign);
     }
+
+    void deallocate(Type* returningMemory, std::size_t numberOfElements) noexcept {
+        ::operator delete(returningMemory, numberOfElements * sizeof(Type), alignment);
+    }
+};
+template<typename Type>
+struct allocator_alignment;
+
+template<typename Type, std::align_val_t align>
+struct allocator_alignment<aligned_allocator<Type, align>>{
+    using type = std::integral_constant<std::align_val_t, align>;
+    static constexpr std::align_val_t value = align;
 };
 
-std::allocator_traits<aligned_allocator<int, 32_a>> testTraits{};
-std::vector<int, aligned_allocator<int, std::align_val_t{32}>> testVec{};
+template<typename Type>
+constexpr std::align_val_t allocator_alignment_v = allocator_alignment<Type>::value;
 
 template<typename Allocator>
 concept base_allocator_functionality = requires(Allocator alloc) {
@@ -86,7 +109,7 @@ struct allocator_deleter {
     [[no_unique_address]] Allocator alloc;
     size_type memorySize;
 };
-
+/*
 // Due allocator shenangans, could have different semantics.
 template<typename Type, base_allocator_functionality Alloc>
     requires std::same_as<Type, typename std::allocator_traits<Alloc>::value_type>
@@ -120,7 +143,7 @@ struct allocated_unique<Type, Alloc> {
 
   private : std::unique_ptr<Type, deleter> impl;
 };
-
+*/
 } // namespace ann
 
 #endif

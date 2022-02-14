@@ -17,6 +17,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <exception>
 
 #include "../Type.hpp"
+#include "../SIMD/VectorSpan.hpp"
 
 namespace nnd{
 
@@ -52,6 +53,7 @@ struct DataSet{
     using value_type = DataType;
     using DataView = typename DefaultDataView<DynamicArray<DataType, align>>::ViewType;
     using ConstDataView = typename DefaultDataView<DynamicArray<DataType, align>>::ViewType;
+    using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, align>;
     //using iterator = typename std::vector<DataEntry>::iterator;
     //using const_iterator = typename std::vector<DataEntry>::const_iterator;
     //std::valarray<unsigned char> rawData;

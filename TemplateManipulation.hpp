@@ -2,6 +2,7 @@
 #ifndef ANN_TEMPLATEMANIPULATION_HPP
 #define ANN_TEMPLATEMANIPULATION_HPP
 
+#include <utility>
 namespace ann{
 
 template<typename... Types>
@@ -13,6 +14,9 @@ template< template<typename...> typename TemplateParam, typename... Pack>
 consteval parameter_pack<Pack...> extract_pack(const TemplateParam<Pack...>&){
     return parameter_pack<Pack...>{};
 }
+
+template< typename TemplatedType>
+using extract_pack_t = decltype(extract_pack(std::declval<TemplatedType>()));
 
 template<typename... Types>
 struct pack_reverser{
@@ -76,9 +80,15 @@ consteval auto bind_to_front(template_parameter<TemplateParam>, parameter_pack<P
 }
 
 template<template <typename...> typename TemplateParam, typename... Pack>
+using front_bind_t = decltype(bind_to_front(template_parameter<TemplateParam>{}, parameter_pack<Pack...>{}));
+
+template<template <typename...> typename TemplateParam, typename... Pack>
 consteval auto bind_to_back(template_parameter<TemplateParam>, parameter_pack<Pack...>){
     return template_parameter<back_bind<TemplateParam, Pack...>::template type>{};
 }
+
+template<template <typename...> typename TemplateParam, typename... Pack>
+using back_bind_t = decltype(bind_to_back(template_parameter<TemplateParam>{}, parameter_pack<Pack...>{}));
 
 template<template <typename...> typename TemplateParam, typename... Pack>
 using apply_pack_t = typename decltype(apply_pack(template_parameter<TemplateParam>{}, parameter_pack<Pack...>{}))::type;

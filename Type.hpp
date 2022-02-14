@@ -51,7 +51,7 @@ struct AlignedPtr;
 //template<typename ValueType, size_t alignment>
 //void swap(DynamicArray<ValueType, alignment> arrA, DynamicArray<ValueType, alignment> arrB);
 
-constexpr struct UninitTag {} uninitTag;
+inline constexpr struct UninitTag {} uninitTag;
 
 template<typename ValueType, size_t align = alignof(ValueType)>//, typename Allocator = std::pmr::polymorphic_allocator<>>
 struct DynamicArray{
@@ -296,20 +296,18 @@ template<typename ElementType, size_t align>
 struct DefaultDataView<DynamicArray<ElementType, align>>{ using ViewType = AlignedSpan<const ElementType, align>; };
 
 template<typename Type>
-struct IsAlignedArray : std::false_type {};
+struct is_aligned_contiguous_range : std::false_type {};
 
 template<typename ElementType>//, size_t align>
-struct IsAlignedArray<DynamicArray<ElementType, 32>> : std::true_type {};
+struct is_aligned_contiguous_range<DynamicArray<ElementType, 32>> : std::true_type {};
+
+template<std::ranges::contiguous_range ArrayLike>
+    requires (ArrayLike::alignment > alignof(std::ranges::range_value_t<ArrayLike>))
+struct is_aligned_contiguous_range<ArrayLike> : std::true_type {};
 
 template<typename Type>
-static constexpr bool isAlignedArray_v = IsAlignedArray<Type>::value;
+static constexpr bool is_aligned_contiguous_range_v = is_aligned_contiguous_range<Type>::value;
 
-template<typename DataTypeA, typename DataTypeB, typename RetType=double>
-using SpaceMetric = RetType (*)(const DataTypeA&, const DataTypeB&);
-
-
-template<typename DataTypeA, typename DataTypeB, typename RetType=std::vector<double>>
-using BatchMetric = RetType (*)(const std::vector<DataTypeA>&, const DataTypeB&);
 
 
 
@@ -420,13 +418,6 @@ struct ZipRange{
 
 
 
-
-struct SplittingHeurisitcs{
-    uint32_t splitThreshold = 80;
-    uint32_t childThreshold = 32;
-    uint32_t maxTreeSize = 130;
-    float maxSplitFraction = 0.0f;
-};
 
 template<typename DataType>
 concept TriviallyCopyable = std::is_trivially_copyable_v<DataType>;

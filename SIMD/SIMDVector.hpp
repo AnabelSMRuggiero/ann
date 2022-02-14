@@ -106,18 +106,18 @@ struct VectorOperation : DataVectorBase<VectorOperation<Op, Operands...>>{
 
 
 template<typename DataType, InstructionSet instructions>
-const auto& Evaluate(const DataVector<DataType, instructions>& vec){
+[[gnu::flatten]] const auto& Evaluate(const DataVector<DataType, instructions>& vec){
     return vec;
 }
 
 template<typename DataType, InstructionSet instructions, size_t align>
-auto Evaluate(const VectorReference<DataType, instructions, align>& vec){
+[[gnu::flatten]] auto Evaluate(const VectorReference<DataType, instructions, align>& vec){
     return simd_ops::load(vec);
 }
 
 template<typename Op, typename... Operands>
     requires Operation<Op, sizeof...(Operands)>
-auto Evaluate(const VectorOperation<Op, Operands...>& expression){
+[[gnu::flatten]] auto Evaluate(const VectorOperation<Op, Operands...>& expression){
 
     auto recurser = [] (const auto& operand){
         return Evaluate(operand);

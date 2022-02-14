@@ -13,6 +13,9 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include <cstddef>
 
+#include <iterator>
+#include <type_traits>
+
 #include "../Type.hpp"
 #include "../DataSerialization.hpp"
 #include "../DataDeserialization.hpp"
@@ -34,8 +37,8 @@ struct DataBlockIterator{
     DataBlockIterator(const size_t arraySize, const size_t viewSize, ElementType* arrayStart): arraySize(arraySize), viewSize(viewSize), arrayStart(arrayStart) {}
 
     private:
-    const size_t arraySize;
-    const size_t viewSize;
+    size_t arraySize;
+    size_t viewSize;
     ElementType* arrayStart;
 
     public:
@@ -61,29 +64,29 @@ struct DataBlockIterator{
         return copy;
     }
 
-    DataBlockIterator operator+(std::ptrdiff_t inc){
+    DataBlockIterator operator+(std::ptrdiff_t inc) const {
         DataBlockIterator copy{arraySize, viewSize, arrayStart + (arraySize * inc)};
         return copy;
     }
 
-    DataBlockIterator operator-(std::ptrdiff_t inc){
+    DataBlockIterator operator-(std::ptrdiff_t inc) const {
         DataBlockIterator copy{arraySize, viewSize, arrayStart - (arraySize * inc)};
         return copy;
     }
 
-    std::ptrdiff_t operator-(DataBlockIterator other){
+    std::ptrdiff_t operator-(DataBlockIterator other) const{
         return (arrayStart - other.arrayStart)/arraySize;
     }
     
-    bool operator==(DataBlockIterator other){
+    bool operator==(DataBlockIterator other) const {
         return arrayStart == other.arrayStart;
     }
     
-    reference operator*(){
+    reference operator*() const{
         return reference{MakeAlignedPtr(arrayStart, *this), viewSize};
     }
 
-    reference operator[](size_t i){
+    reference operator[](size_t i) const {
         return *(*this + i);
     }
 
@@ -97,12 +100,12 @@ struct DataBlockIterator{
         return *this;
     }
 
-    auto operator<=>(DataBlockIterator& rhs){
+    auto operator<=>(DataBlockIterator& rhs) const {
         return arrayStart<=> rhs.arrayStart;
     }
 };
 
-
+constexpr bool testIter = std::weakly_incrementable< DataBlockIterator<const float, 32>>;
 //Presumably, each project would only need to instantiate for a single FloatType
 template<typename ElementType, size_t align = 32>
     requires (alignof(ElementType) <= sizeof(ElementType))
