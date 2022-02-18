@@ -15,13 +15,16 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <filesystem>
 #include <fstream>
 #include <exception>
+#include <new>
 
 #include "../Type.hpp"
 #include "../SIMD/VectorSpan.hpp"
 
+#include "../AlignedMemory/DynamicArray.hpp"
+
 namespace nnd{
 
-void OpenData(std::filesystem::path dataPath, const size_t vectorLength, const size_t endEntry, const size_t startEntry = 0){
+inline void OpenData(std::filesystem::path dataPath, const size_t vectorLength, const size_t endEntry, const size_t startEntry = 0){
     using DataType = float;
 
     std::ifstream dataStream(dataPath, std::ios_base::binary);
@@ -29,35 +32,36 @@ void OpenData(std::filesystem::path dataPath, const size_t vectorLength, const s
 
     const size_t numElements = vectorLength * (endEntry-startEntry);
 
-    DynamicArray<float> dataArr(uninitTag, vectorLength * (endEntry-startEntry));
+    ann::dynamic_array<float> dataArr( vectorLength * (endEntry-startEntry));
 
     dataStream.read(reinterpret_cast<char*>(dataArr.begin()), numElements*sizeof(DataType));
 
     
 }
 
-template<typename DataEntry, size_t alignment>
-size_t EntryPadding(const size_t entryLength){
+template<typename DataEntry, std::align_val_t alignment>
+size_t EntryPadding(std::size_t entryLength){
     size_t entryBytes = sizeof(DataEntry)*entryLength;
-    size_t excessBytes = entryBytes%alignment;
+    size_t excessBytes = entryBytes % static_cast<std::size_t>(alignment);
     if (excessBytes == 0) return 0;
-    size_t paddingBytes = alignment - excessBytes;
+    size_t paddingBytes = static_cast<std::size_t>(alignment) - excessBytes;
     size_t paddingEntries = paddingBytes/sizeof(DataEntry);
     assert(paddingEntries*sizeof(DataEntry) == paddingBytes);
     return paddingBytes/sizeof(DataEntry);
     //((sizeof(DataType)*entryLength)%alignment > 0) ? alignment - entryLength%alignment : 0
 }
 
+
 template<typename DataType, size_t align=32>
 struct DataSet{
     using value_type = DataType;
-    using DataView = typename DefaultDataView<DynamicArray<DataType, align>>::ViewType;
-    using ConstDataView = typename DefaultDataView<DynamicArray<DataType, align>>::ViewType;
+    using DataView = typename DefaultDataView<ann::aligned_array<DataType, std::align_val_t{align}>>::ViewType;
+    using ConstDataView = typename DefaultDataView<ann::aligned_array<DataType, std::align_val_t{align}>>::ViewType;
     using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, align>;
     //using iterator = typename std::vector<DataEntry>::iterator;
     //using const_iterator = typename std::vector<DataEntry>::const_iterator;
     //std::valarray<unsigned char> rawData;
-    static constexpr size_t alignment = align;
+    static constexpr std::align_val_t alignment{align};
     
 
     private:
@@ -65,7 +69,7 @@ struct DataSet{
     size_t sampleLength;
     size_t numberOfSamples;
     size_t indexStart;
-    DynamicArray<DataType, align> samples;
+    ann::aligned_array<DataType, alignment> samples;
 
     public:
     DataSet(std::filesystem::path dataPath, const size_t entryLength, const size_t endEntry, const size_t startEntry = 0, const size_t fileHeader = 0):
@@ -82,7 +86,7 @@ struct DataSet{
 
             const size_t numElements = sampleLength * numberOfSamples;
 
-            DynamicArray<DataType, align> dataArr(uninitTag, numElements);
+            ann::aligned_array<float, alignment> dataArr( numElements );
 
             dataStream.seekg(fileHeader + entryLength*startEntry);
             dataStream.read(reinterpret_cast<char*>(dataArr.begin()), numElements*sizeof(DataType));
@@ -118,7 +122,7 @@ struct DataSet{
     }
     
     ConstDataView operator[](size_t i) const{
-        const value_type* dataPtr = samples.get();
+        const value_type* dataPtr = samples.data();
         dataPtr += i * sampleLength;
         return ConstDataView(MakeAlignedPtr(dataPtr, *this), sampleLength);
         /*

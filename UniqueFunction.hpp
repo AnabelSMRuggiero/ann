@@ -30,10 +30,10 @@ struct UniqueFunction<R(Args...)>{
 
     UniqueFunction(UniqueFunction&&) = default;
 
-    template<IsNot<UniqueFunction> Functor>
+    template<is_not<UniqueFunction> Functor>
     UniqueFunction(Functor&& target): ptrToFunctor(std::make_unique<ConcreteFunction<Functor>>(std::move(target))){};
 
-    template<IsNot<R(Args...)> WrongSignature>
+    template<is_not<R(Args...)> WrongSignature>
     UniqueFunction(UniqueFunction<WrongSignature>&&) = delete;
 
     private:

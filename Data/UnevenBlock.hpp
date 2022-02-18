@@ -20,6 +20,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../DataSerialization.hpp"
 #include "../DataDeserialization.hpp"
 
+#include "../AlignedMemory/DynamicArray.hpp"
+
 
 
 namespace nnd{
@@ -126,12 +128,12 @@ struct UnevenBlock{
     using const_reference = const std::span<const ElementType>;
 
 
-    DynamicArray<std::byte, std::max(alignof(size_t), alignof(ElementType))> dataStorage;
+    ann::aligned_array<std::byte, static_cast<std::align_val_t>(std::max(alignof(size_t), alignof(ElementType)))> dataStorage;
     size_t numArrays;
     ElementType* firstIndex;
 
     template<std::endian dataEndianess = std::endian::native>
-    static UnevenBlock deserialize(std::ifstream& inFile, std::pmr::memory_resource* resource = std::pmr::get_default_resource()){
+    static UnevenBlock deserialize(std::ifstream& inFile){
 
         static_assert(dataEndianess == std::endian::native, "reverseEndianess not implemented yet for this class");
         
@@ -143,7 +145,7 @@ struct UnevenBlock{
 
         DeserializationArgs args = Extract<DeserializationArgs>(inFile);
 
-        UnevenBlock retBlock{args.numBytes, args.numArrays, args.indexOffset, resource};
+        UnevenBlock retBlock{args.numBytes, args.numArrays, args.indexOffset};
         Extract<std::byte>(inFile, retBlock.dataStorage.begin(), retBlock.dataStorage.end());
 
         return retBlock;
@@ -153,12 +155,12 @@ struct UnevenBlock{
 
     //Default Copy Constructor is buggy
     UnevenBlock(const UnevenBlock& other): dataStorage(other.dataStorage), numArrays(other.numArrays), firstIndex(nullptr){
-        this->firstIndex =  static_cast<ElementType*>(static_cast<void*>(this->dataStorage.get()
+        this->firstIndex =  static_cast<ElementType*>(static_cast<void*>(this->dataStorage.data()
            + other.IndexOffset()));
     }
 
     UnevenBlock& operator=(const UnevenBlock& other){
-        dataStorage = DynamicArray<std::byte, std::max(alignof(size_t), alignof(ElementType))>(other.dataStorage.size());
+        dataStorage = ann::aligned_array<std::byte, std::align_val_t{std::max(alignof(size_t), alignof(ElementType))}>(other.dataStorage.size());
         numArrays = other.numArrays;
 
 
@@ -175,12 +177,12 @@ struct UnevenBlock{
     //    verticies(numVerticies, std::vector<IndexType>(numNeighbors)){};
 
     //template<typename DistType>
-    UnevenBlock(const size_t numBytes, const size_t numArrays, const size_t headerPadding, const size_t numIndecies, std::pmr::memory_resource* resource): dataStorage(numBytes, resource), numArrays(numArrays), firstIndex(nullptr){
+    UnevenBlock(const size_t numBytes, const size_t numArrays, const size_t headerPadding, const size_t numIndecies): dataStorage(numBytes), numArrays(numArrays), firstIndex(nullptr){
         size_t* vertexStart = new (dataStorage.begin()) size_t[numArrays+1];
         firstIndex = new (dataStorage.begin() + sizeof(size_t)*(numArrays+1) + headerPadding) ElementType[numIndecies];
     }
 
-    UnevenBlock(const size_t numBytes, const size_t numArrays, const std::ptrdiff_t indexOffset, std::pmr::memory_resource* resource): dataStorage(numBytes, resource), numArrays(numArrays), firstIndex(nullptr){
+    UnevenBlock(const size_t numBytes, const size_t numArrays, const std::ptrdiff_t indexOffset): dataStorage(numBytes), numArrays(numArrays), firstIndex(nullptr){
         size_t* vertexStart = new (dataStorage.begin()) size_t[numArrays+1];
         size_t numIndecies = (dataStorage.end() - (dataStorage.begin() + indexOffset))/sizeof(ElementType);
         firstIndex = new (dataStorage.begin() + indexOffset) ElementType[numIndecies];
@@ -224,19 +226,19 @@ struct UnevenBlock{
 
 
 
-    std::byte* get(){
-        return dataStorage.get();
+    std::byte* data(){
+        return dataStorage.data();
     }
 
     std::ptrdiff_t IndexOffset() const{
-        return static_cast<std::byte*>(static_cast<void*>(firstIndex)) - dataStorage.get();
+        return static_cast<std::byte*>(static_cast<void*>(firstIndex)) - dataStorage.data();
     }
 
 };
 
 template<typename ElementType>
     requires std::is_trivially_constructible_v<ElementType> && std::is_trivially_destructible_v<ElementType>
-UnevenBlock<ElementType> UninitUnevenBlock(const size_t numArrays, const size_t numElements, std::pmr::memory_resource* resource = std::pmr::get_default_resource()){
+UnevenBlock<ElementType> UninitUnevenBlock(const size_t numArrays, const size_t numElements){
     size_t numberOfBytes = 0;
     size_t headerBytes = sizeof(size_t)*(numArrays+1);
     size_t headerPadding = 0;
@@ -249,7 +251,7 @@ UnevenBlock<ElementType> UninitUnevenBlock(const size_t numArrays, const size_t 
         numberOfBytes = headerBytes + sizeof(ElementType)*numElements;
     }
 
-    return UnevenBlock<ElementType>(numberOfBytes, numArrays, headerPadding, numElements, resource);
+    return UnevenBlock<ElementType>(numberOfBytes, numArrays, headerPadding, numElements);
 }
 
 
@@ -262,7 +264,7 @@ void Serialize(const UnevenBlock<BlockDataType>& block, std::ofstream& outputFil
     outputFunc(block.IndexOffset());
     
                                                                                  //this is already the size in bytes
-    outputFile.write(reinterpret_cast<const char*>(block.dataStorage.get()), block.dataStorage.size());
+    outputFile.write(reinterpret_cast<const char*>(block.dataStorage.data()), block.dataStorage.size());
 }
 
 }

@@ -11,6 +11,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_GENERALTYPE_HPP
 #define NND_GENERALTYPE_HPP
 
+#include <iterator>
 #include <vector>
 #include <concepts>
 #include <memory>
@@ -50,7 +51,7 @@ struct AlignedPtr;
 
 //template<typename ValueType, size_t alignment>
 //void swap(DynamicArray<ValueType, alignment> arrA, DynamicArray<ValueType, alignment> arrB);
-
+/*
 inline constexpr struct UninitTag {} uninitTag;
 
 template<typename ValueType, size_t align = alignof(ValueType)>//, typename Allocator = std::pmr::polymorphic_allocator<>>
@@ -144,13 +145,13 @@ struct DynamicArray{
     //AlignedPtr<const ValueType, align> GetAlignedPtr(size_t entriesToJump) const;
 };
 
-
+*/
 
 
 //template<typename ValueType, size_t align>
 //struct AlignedPtr;
-template<typename ValueType>
-using AlignedArray = DynamicArray<ValueType, 32>;
+//template<typename ValueType>
+//using AlignedArray = DynamicArray<ValueType, 32>;
 
 
 template<typename ValueType, size_t align>
@@ -159,7 +160,7 @@ struct AlignedPtr;
 template<typename ValueType, size_t align>
 AlignedPtr<ValueType, align> MakeAlignedPtrHelper(ValueType* ptr);
 
-template<typename ValueType, size_t align>
+template<typename ValueType, std::size_t align>
 struct AlignedPtr{
     using value_type = ValueType;
     //using reference_type 
@@ -189,16 +190,16 @@ struct AlignedPtr{
 
 };
 
-template<typename ValueType, size_t align>
+template<typename ValueType, std::size_t align>
 AlignedPtr<ValueType, align> MakeAlignedPtrHelper(ValueType* ptr){
     return AlignedPtr<ValueType, align>{ptr};
 }
 
 
 template<typename ValueType, typename AlignedContainer>
-    requires (AlignedContainer::alignment >= alignof(ValueType))
-AlignedPtr<ValueType, AlignedContainer::alignment> MakeAlignedPtr(ValueType* ptr, AlignedContainer&){
-    return MakeAlignedPtrHelper<ValueType, AlignedContainer::alignment>(ptr);
+    requires (std::align_val_t{AlignedContainer::alignment} >= std::align_val_t{alignof(ValueType)})
+AlignedPtr<ValueType, static_cast<size_t>(AlignedContainer::alignment)> MakeAlignedPtr(ValueType* ptr, AlignedContainer&){
+    return MakeAlignedPtrHelper<ValueType, static_cast<std::size_t>(AlignedContainer::alignment)>(ptr);
 }
 
 /*
@@ -238,13 +239,29 @@ AlignedPtr<const ValueType, align> DynamicArray<ValueType, align>::GetAlignedPtr
 */
 
 template<typename Type, typename OtherType>
-concept IsNot = !std::same_as<std::remove_cvref_t<Type>, std::remove_cvref_t<OtherType>>;
+concept is_not = !std::same_as<std::remove_cvref_t<Type>, std::remove_cvref_t<OtherType>>;
 
-template<typename ElementType, size_t align=32>
+template<typename Type>
+struct is_aligned_contiguous_range : std::false_type {};
+
+
+template<std::ranges::contiguous_range ArrayLike>
+    requires (static_cast<std::size_t>(ArrayLike::alignment) > alignof(std::ranges::range_value_t<ArrayLike>))
+struct is_aligned_contiguous_range<ArrayLike> : std::true_type {};
+
+template<typename Range, std::align_val_t min_alignment>
+concept aligned_range = std::ranges::contiguous_range<Range> && (static_cast<std::align_val_t>(std::remove_reference_t<Range>::alignment) >= min_alignment);
+
+template<typename Type>
+constexpr bool is_aligned_contiguous_range_v = is_aligned_contiguous_range<Type>::value;
+
+
+
+template<typename ElementType, std::size_t align=32>
 struct AlignedSpan{
 
     using value_type = std::remove_cv_t<ElementType>;
-    static const size_t alignment = align;
+    static constexpr std::size_t alignment{align};
 
 
     private:
@@ -262,10 +279,11 @@ struct AlignedSpan{
     AlignedSpan(const AlignedSpan&) = default;
     AlignedSpan& operator=(const AlignedSpan&) = default;
 
-    template<typename ConvertableToElement>
-    AlignedSpan(const DynamicArray<ConvertableToElement, alignment>& dataToView): data(dataToView.begin()), extent(dataToView.size()){};
+    template<aligned_range<static_cast<std::align_val_t>(alignment)> Range>
+        requires (std::same_as<value_type, std::ranges::range_value_t<Range>> && std::ranges::sized_range<Range>)
+    AlignedSpan(Range&& dataToView): data(std::ranges::data(dataToView)), extent(std::ranges::size(dataToView)){};
 
-    //template<IsNot<AlignedSpan> ConvertableToElement>
+    //template<is_not<AlignedSpan> ConvertableToElement>
     AlignedSpan(const AlignedSpan<std::remove_const_t<ElementType>, alignment>& spanToCopy) requires std::is_const_v<ElementType>: data(spanToCopy.begin()), extent(spanToCopy.size()){};
 
     
@@ -292,21 +310,19 @@ struct AlignedSpan{
 template<std::ranges::contiguous_range Container>
 struct DefaultDataView{ using ViewType = std::span<const typename Container::value_type>; };
 
-template<typename ElementType, size_t align>
-struct DefaultDataView<DynamicArray<ElementType, align>>{ using ViewType = AlignedSpan<const ElementType, align>; };
+template<std::ranges::contiguous_range Container>
+    requires (is_aligned_contiguous_range_v<Container>)
+struct DefaultDataView<Container>{ using ViewType = AlignedSpan<const typename Container::value_type, static_cast<std::size_t>(Container::alignment)>; };
 
-template<typename Type>
-struct is_aligned_contiguous_range : std::false_type {};
 
-template<typename ElementType>//, size_t align>
-struct is_aligned_contiguous_range<DynamicArray<ElementType, 32>> : std::true_type {};
+//template<typename ElementType, size_t align>
+//struct DefaultDataView<DynamicArray<ElementType, align>>{ using ViewType = AlignedSpan<const ElementType, align>; };
 
-template<std::ranges::contiguous_range ArrayLike>
-    requires (ArrayLike::alignment > alignof(std::ranges::range_value_t<ArrayLike>))
-struct is_aligned_contiguous_range<ArrayLike> : std::true_type {};
 
-template<typename Type>
-static constexpr bool is_aligned_contiguous_range_v = is_aligned_contiguous_range<Type>::value;
+//template<typename ElementType>//, size_t align>
+//struct is_aligned_contiguous_range<DynamicArray<ElementType, 32>> : std::true_type {};
+
+
 
 
 

@@ -122,16 +122,16 @@ template<InstructionSet set>
 constexpr size_t vectorWidth = 0;
 
 template<>
-constexpr size_t vectorWidth<InstructionSet::avx512> = 64;
+inline constexpr size_t vectorWidth<InstructionSet::avx512> = 64;
 
 template<>
-constexpr size_t vectorWidth<InstructionSet::fma> = 32;
+inline constexpr size_t vectorWidth<InstructionSet::fma> = 32;
 
 template<>
-constexpr size_t vectorWidth<InstructionSet::avx2> = 32;
+inline constexpr size_t vectorWidth<InstructionSet::avx2> = 32;
 
 template<>
-constexpr size_t vectorWidth<InstructionSet::avx> = 32;
+inline constexpr size_t vectorWidth<InstructionSet::avx> = 32;
 
 }
 

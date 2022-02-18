@@ -14,6 +14,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <cstddef>
 
 #include <iterator>
+#include <new>
 #include <type_traits>
 
 #include "../Type.hpp"
@@ -21,6 +22,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../DataDeserialization.hpp"
 #include "../SIMD/VectorSpan.hpp"
 
+#include "../AlignedMemory/DynamicArray.hpp"
+#include "DataSet.hpp"
 namespace nnd{
 
 
@@ -123,13 +126,13 @@ struct DataBlock{
     using const_reference = AlignedSpan<const ElementType, align>;
     
 
-    static constexpr size_t alignment = align;
+    static constexpr std::align_val_t alignment{align};
 
     size_t blockNumber;
     size_t numEntries;
     size_t entryLength;
     size_t lengthWithPadding;
-    DynamicArray<ElementType, alignment> blockData;
+    ann::aligned_array<ElementType, alignment> blockData;
     //std::vector<DataEntry> blockData;
     
     template<std::endian dataEndianess = std::endian::native>
@@ -202,15 +205,15 @@ struct DataBlock{
    
 
     iterator begin(){
-        return iterator{lengthWithPadding, entryLength, blockData.get()};
+        return iterator{lengthWithPadding, entryLength, blockData.data()};
     }
 
     const_iterator begin() const{
-        return const_iterator{lengthWithPadding, entryLength, blockData.get()};
+        return const_iterator{lengthWithPadding, entryLength, blockData.data()};
     }
 
     const_iterator cbegin() const{
-        return const_iterator{lengthWithPadding, entryLength, blockData.get()};
+        return const_iterator{lengthWithPadding, entryLength, blockData.data()};
     }
 
     iterator end(){

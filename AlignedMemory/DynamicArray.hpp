@@ -21,6 +21,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include "../TemplateManipulation.hpp"
 #include "AlignedAllocator.hpp"
+#include "../Type.hpp"
 
 namespace ann {
 
@@ -130,7 +131,7 @@ struct dynamic_array {
         []<typename... Types>(pointer ptr, allocator_type& alloc, Types&&... args) noexcept(noexcept_construct<Types...>) {
         std::uninitialized_construct_using_allocator(ptr, alloc, std::forward<Types>(args)...);
     };
-
+    /*
     inline static constexpr auto bind_copy_construct = [](allocator_type & alloc) noexcept(true) -> auto {
         return [&alloc](pointer to, pointer from) noexcept(noexcept_construct<reference>) { construct(to, alloc, *from); };
     };
@@ -138,7 +139,7 @@ struct dynamic_array {
     inline static constexpr auto bind_move_construct = [](allocator_type & alloc) noexcept(true) -> auto {
         return [&alloc](pointer to, pointer from) noexcept(noexcept_construct<value_type&&>) { construct(to, alloc, std::move(*from)); };
     };
-
+    */
     [[no_unique_address]] Allocator alloc{};
     pointer array_begin{ nullptr };
     size_type array_size{ 0 };
@@ -153,14 +154,14 @@ struct dynamic_array {
         : alloc{ new_alloc }, array_begin{ allocate(alloc, number_of_elements) }, array_size{ number_of_elements } {
 
         auto initalizer = [&]() noexcept(std::is_nothrow_default_constructible_v<value_type>) -> void {
-            std::uninitialized_default_construct(array_begin, array_begin + array_size);
+            std::uninitialized_value_construct(array_begin, array_begin + array_size);
         };
         initalize(initalizer);
     }
 
     // clang-format off
     template<std::ranges::sized_range OtherRange>
-        requires (!std::same_as<dynamic_array, OtherRange> && std::constructible_from<value_type, std::ranges::range_reference_t<OtherRange>>)
+        requires (nnd::is_not<dynamic_array, OtherRange> && std::constructible_from<value_type, std::ranges::range_reference_t<OtherRange>>)
     dynamic_array(OtherRange&& range_to_copy, const allocator_type& new_alloc = {}) :
         alloc{ new_alloc },
         array_begin{ allocate(alloc, std::ranges::size(range_to_copy)) }, 
@@ -168,7 +169,7 @@ struct dynamic_array {
 
             auto initalizer = [&](){
                 std::ranges::uninitialized_copy(std::ranges::begin(std::forward<OtherRange>(range_to_copy)), 
-                                                std::ranges::begin(std::forward<OtherRange>(range_to_copy)), 
+                                                std::ranges::end(std::forward<OtherRange>(range_to_copy)), 
                                                 array_begin,
                                                 array_begin+array_size);
             };
@@ -190,12 +191,25 @@ struct dynamic_array {
             };
             initalize(initalizer);
     }
+
+    template<std::invocable<> Functor>
+       requires (std::same_as<std::invoke_result_t<Functor>, value_type> || std::constructible_from<value_type, std::invoke_result_t<Functor>>)
+    dynamic_array(Functor&& functor, size_type number_of_elements, const allocator_type& new_alloc = {}):
+        alloc{ new_alloc },
+        array_begin{ allocate(alloc, number_of_elements) }, 
+        array_size{ number_of_elements } {
+
+            auto initalizer = [&](pointer construct_location) noexcept(noexcept(new (construct_location) value_type{functor()}))-> void{
+                new (construct_location) value_type{std::forward<Functor>(functor)()};
+            };
+            initalize(initalizer);
+    }
     // clang-format on
     dynamic_array(const dynamic_array& other)
         : alloc{ alloc_traits::select_on_container_copy_construction(other.alloc) }, array_begin{ allocate(alloc, other.array_size) },
             array_size{ other.array_size } {
         auto initalizer = [&]() noexcept(std::is_nothrow_copy_constructible_v<value_type>) -> void {
-            std::uninitialized_copy(other.array_begin, other.array_begin + array_size, array_size);
+            std::uninitialized_copy(other.array_begin, other.array_begin + array_size, array_begin);
         };
         initalize(initalizer);
     }
@@ -203,7 +217,7 @@ struct dynamic_array {
     dynamic_array(const dynamic_array& other, const allocator_type& copy_alloc)
         : alloc{ copy_alloc }, array_begin{ allocate(alloc, other.array_size) }, array_size{ other.array_size } {
         auto initalizer = [&]() noexcept(std::is_nothrow_copy_constructible_v<value_type>) -> void {
-            std::uninitialized_copy(other.array_begin, other.array_begin + array_size, array_size);
+            std::uninitialized_copy(other.array_begin, other.array_begin + array_size, array_begin);
         };
         initalize(initalizer);
     }
@@ -215,13 +229,37 @@ struct dynamic_array {
     }
 
     private:
+    void initalize(std::invocable<pointer> auto&& initalizer) noexcept requires(noexcept(initalizer)) {
+        pointer current = begin();
+        for(; current != end(); current +=1){
+            initalizer(current); 
+        }
+    }
+
+    void initalize(std::invocable<pointer> auto&& initalizer) noexcept requires(!noexcept(initalizer)) {
+        pointer current = begin();
+        try {
+            for(; current != end(); current +=1){
+                initalizer(current); 
+            }
+        } catch (...) {
+            for(;current != begin(); current-=1){
+                (current-1)->~value_type();
+            }
+            deallocate(alloc, array_begin, array_size);
+            array_begin = nullptr;
+            array_size = 0;
+            throw;
+        }
+    }
+
     void initalize(std::invocable<> auto&& initalizer) noexcept requires(noexcept(initalizer)) { initalizer(); }
 
-    void initalize(std::invocable<> auto initalizer) noexcept requires(!noexcept(initalizer)) {
+    void initalize(std::invocable<> auto&& initalizer) noexcept requires(!noexcept(initalizer)) {
         try {
             initalizer();
         } catch (...) {
-            deallocate(array_begin, array_size);
+            deallocate(alloc, array_begin, array_size);
             array_begin = nullptr;
             array_size = 0;
             throw;
@@ -400,8 +438,8 @@ struct dynamic_array {
 
 // template<typename ValueType, size_t align>
 // struct AlignedPtr;
-// template<typename ValueType>
-// using AlignedArray = DynamicArray<ValueType, 32>;
+template<typename ValueType, std::align_val_t align = 32_a>
+using aligned_array = dynamic_array<ValueType, aligned_allocator<ValueType, align>, align>;
 
 } // namespace ann
 

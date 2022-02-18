@@ -117,7 +117,7 @@ void Serialize(const std::pair<SerializeeA, SerializeeB>& pairToSerialize, std::
 
 
 
-auto BindSerializer(std::ofstream& outFile){
+inline auto BindSerializer(std::ofstream& outFile){
 
     return [&](const auto& dataToWrite){
         serialize(dataToWrite, outFile);

@@ -11,6 +11,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_DATADESERIALIZATION_HPP
 #define NND_DATADESERIALIZATION_HPP
 
+#include <new>
 #include <type_traits>
 #include <bit>
 #include <fstream>
@@ -21,6 +22,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include "./Type.hpp"
 #include "./DelayConstruct.hpp"
+#include "./AlignedMemory/DynamicArray.hpp"
 namespace nnd{
 
 
@@ -169,31 +171,31 @@ std::unordered_map<ExtracteeA, ExtracteeB> Extract(StreamType&& dataStream, Extr
 }
 
 template<std::endian dataEndianess = std::endian::native, typename StreamType, typename ValueType, size_t alignment>
-DynamicArray<ValueType, alignment> Extract(StreamType&& inFile, std::pmr::memory_resource* resource, ExtractTag<DynamicArray<ValueType, alignment>>){
+ann::aligned_array<ValueType, static_cast<std::align_val_t>(alignment)> Extract(StreamType&& inFile, ExtractTag<ann::aligned_array<ValueType, static_cast<std::align_val_t>(alignment)>>){
 
     size_t arraySize = Extract<size_t, dataEndianess>(inFile);
 
     if constexpr (std::is_trivially_copyable_v<ValueType>){
 
-        DynamicArray<ValueType, alignment> retArray(uninitTag, arraySize, resource);
+        ann::aligned_array<ValueType, static_cast<std::align_val_t>(alignment)> retArray(arraySize);
         Extract<ValueType, dataEndianess>(inFile, retArray.begin(), retArray.end());
 
         return retArray;
 
     } else {
 
-        DynamicArray<ValueType, alignment> retArray(arraySize, resource);
+        ann::aligned_array<ValueType, static_cast<std::align_val_t>(alignment)> retArray(arraySize);
         for(auto&& element: retArray) element = Extract<ValueType, dataEndianess>(inFile);
 
         return retArray;
     }
 }
-
+/*
 template<std::endian dataEndianess = std::endian::native, typename StreamType, typename ValueType, size_t alignment>
-DynamicArray<ValueType, alignment> Extract(StreamType&& inFile, ExtractTag<DynamicArray<ValueType, alignment>>){
-    return Extract<dataEndianess>(inFile, std::pmr::get_default_resource(), ExtractTag<DynamicArray<ValueType, alignment>>{});
+ann::aligned_array<ValueType, static_cast<std::align_val_t>(alignment)> Extract(StreamType&& inFile, ExtractTag<ann::aligned_array<ValueType, static_cast<std::align_val_t>(alignment)>>){
+    return Extract<dataEndianess>(inFile, ExtractTag<ann::aligned_array<ValueType, static_cast<std::align_val_t>(alignment)>>{});
 }
-
+*/
 template<std::endian dataEndianness = std::endian::native, typename StreamType, typename ValueType, typename Allocator>
 std::vector<ValueType, Allocator> Extract(StreamType&& inFile, ExtractTag<std::vector<ValueType, Allocator>>){
     const size_t rangeSize = Extract<size_t, dataEndianness>(std::forward<StreamType>(inFile));

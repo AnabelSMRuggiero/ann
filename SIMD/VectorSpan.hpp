@@ -12,7 +12,9 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #define NND_VECTORSPAN_HPP
 
 #include "../Type.hpp"
+#include "../AlignedMemory/DynamicArray.hpp"
 #include "SIMDVector.hpp"
+#include <type_traits>
 
 namespace ann {
 
@@ -118,10 +120,10 @@ struct vector_span {
     vector_span(const vector_span &) = default;
     vector_span &operator=(const vector_span &) = default;
 
-    vector_span(nnd::DynamicArray<ElementType, alignment> &dataToView) requires(!std::is_const_v<ElementType>)
+    vector_span(ann::aligned_array<std::remove_const_t<ElementType>, static_cast<std::align_val_t>(alignment)> &dataToView) requires(!std::is_const_v<ElementType>)
         : data(dataToView.begin()), fullExtent(dataToView.size()){};
 
-    vector_span(const nnd::DynamicArray<ElementType, alignment> &dataToView) requires std::is_const_v<ElementType>
+    vector_span(const ann::aligned_array<std::remove_const_t<ElementType>, static_cast<std::align_val_t>(alignment)> &dataToView) requires std::is_const_v<ElementType>
         : data(dataToView.begin()), fullExtent(dataToView.size()){};
 
     vector_span(nnd::AlignedSpan<ElementType, alignment> &dataToView) requires(!std::is_const_v<ElementType>)

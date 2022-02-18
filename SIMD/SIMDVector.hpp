@@ -216,28 +216,28 @@ auto operator/(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBas
 }
 
 template<typename LHSDerived, typename RHSDerived>
-LHSDerived& operator+=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] LHSDerived& operator+=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return static_cast<LHSDerived&>(lhsOperand) = static_cast<const LHSDerived&>(lhsOperand) + static_cast<const RHSDerived&>(rhsOperand);
 
 }
 
 template<typename LHSDerived, typename RHSDerived>
-LHSDerived& operator-=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] LHSDerived& operator-=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return static_cast<LHSDerived&>(lhsOperand) = static_cast<const LHSDerived&>(lhsOperand) - static_cast<const RHSDerived&>(rhsOperand);
 
 }
 
 template<typename LHSDerived, typename RHSDerived>
-LHSDerived& operator*=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] LHSDerived& operator*=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return static_cast<LHSDerived&>(lhsOperand) = static_cast<const LHSDerived&>(lhsOperand) * static_cast<const RHSDerived&>(rhsOperand);
 
 }
 
 template<typename LHSDerived, typename RHSDerived>
-LHSDerived& operator/=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] LHSDerived& operator/=(DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return static_cast<LHSDerived&>(lhsOperand) = static_cast<const LHSDerived&>(lhsOperand) / static_cast<const RHSDerived&>(rhsOperand);
 
