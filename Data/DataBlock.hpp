@@ -17,12 +17,14 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <new>
 #include <type_traits>
 
-#include "../Type.hpp"
+#include "../AlignedMemory/DynamicArray.hpp"
+
 #include "../DataSerialization.hpp"
 #include "../DataDeserialization.hpp"
 #include "../SIMD/VectorSpan.hpp"
+#include "../Type.hpp"
 
-#include "../AlignedMemory/DynamicArray.hpp"
+#include "DataIterator.hpp"
 #include "DataSet.hpp"
 namespace nnd{
 
@@ -108,30 +110,30 @@ struct DataBlockIterator{
     }
 };
 
-constexpr bool testIter = std::weakly_incrementable< DataBlockIterator<const float, 32>>;
 //Presumably, each project would only need to instantiate for a single FloatType
-template<typename ElementType, size_t align = 32>
+using namespace ann::udl;
+template<typename ElementType, std::align_val_t align = 32_a>
     requires (alignof(ElementType) <= sizeof(ElementType))
 struct DataBlock{
     using value_type = ElementType;
-    using DataView = AlignedSpan<ElementType, align>;
-    using ConstDataView = AlignedSpan<const ElementType, align>;
+    using DataView = AlignedSpan<ElementType, static_cast<std::size_t>(align)>;
+    using ConstDataView = AlignedSpan<const ElementType, static_cast<std::size_t>(align)>;
     
-    using vector_view = ann::vector_span<value_type, ann::defaultInstructionSet, align>;
-    using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, align>;
+    using vector_view = ann::vector_span<value_type, ann::defaultInstructionSet, static_cast<std::size_t>(align)>;
+    using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, static_cast<std::size_t>(align)>;
     
-    using iterator = DataBlockIterator<ElementType, align>;
-    using const_iterator = DataBlockIterator<const ElementType, align>;
-    using reference = AlignedSpan<ElementType, align>;
-    using const_reference = AlignedSpan<const ElementType, align>;
+    using iterator = ann::data_iterator<ElementType, align>;
+    using const_iterator = ann::data_iterator<const ElementType, align>;
+    using reference = AlignedSpan<ElementType, static_cast<std::size_t>(align)>;
+    using const_reference = AlignedSpan<const ElementType, static_cast<std::size_t>(align)>;
     
 
     static constexpr std::align_val_t alignment{align};
 
-    size_t blockNumber;
-    size_t numEntries;
-    size_t entryLength;
-    size_t lengthWithPadding;
+    std::size_t blockNumber;
+    std::size_t numEntries;
+    std::size_t entryLength;
+    std::size_t lengthWithPadding;
     ann::aligned_array<ElementType, alignment> blockData;
     //std::vector<DataEntry> blockData;
     
@@ -141,9 +143,9 @@ struct DataBlock{
         static_assert(dataEndianess == std::endian::native, "reverseEndianess not implemented yet for this class");
 
         struct DeserializationArgs{
-            size_t size;
-            size_t entryLength;
-            size_t lengthWithPadding;
+            std::size_t size;
+            std::size_t entryLength;
+            std::size_t lengthWithPadding;
         };
         /*
             outputFunc(block.size());
@@ -217,15 +219,15 @@ struct DataBlock{
     }
 
     iterator end(){
-        return iterator{lengthWithPadding, entryLength, blockData.get() + lengthWithPadding*(numEntries-1)};
+        return iterator{lengthWithPadding, entryLength, blockData.data() + lengthWithPadding*(numEntries)};
     }
 
     const_iterator end() const{
-        return const_iterator{lengthWithPadding, entryLength, blockData.get() + lengthWithPadding*(numEntries-1)};
+        return const_iterator{lengthWithPadding, entryLength, blockData.data() + lengthWithPadding*(numEntries)};
     }
 
     const_iterator cend() const{
-        return const_iterator{lengthWithPadding, entryLength, blockData.get() + lengthWithPadding*(numEntries-1)};
+        return const_iterator{lengthWithPadding, entryLength, blockData.data() + lengthWithPadding*(numEntries)};
     }
 
     DataView operator[](size_t i){
@@ -247,14 +249,14 @@ struct DataBlock{
         */
     }
     
-    size_t size() const{
+    std::size_t size() const{
         return numEntries;
     }
 
 
 };
 
-template<typename BlockDataType, size_t blockAlign>
+template<typename BlockDataType, std::align_val_t blockAlign>
 void Serialize(const DataBlock<BlockDataType, blockAlign>& block, std::ofstream& outputFile){
     //std::ofstream outputFile(outputPath, std::ios_base::binary);
     //outputFile << block.size() << block.entryLength << block.lengthWithPadding;

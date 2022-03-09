@@ -27,8 +27,8 @@ namespace nnd{
 
 
 
-template<typename DataType, std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream, typename... Ts>
-DataType Extract(StreamType&& dataStream, Ts&&... ts) = delete;
+//template<typename DataType, std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream, typename... Ts>
+//DataType Extract(StreamType&& dataStream, Ts&&... ts) = delete;
 
 
 template<typename Extractee, std::endian DataEndianness, typename StreamType, typename... Ts>
@@ -85,7 +85,17 @@ Extractee Extract(StreamType&& dataStream, Ts&&... ts){
     //Extract<DataEndianness, StreamType>(std::forward<StreamType>(dataStream), std::forward<Ts>(ts)..., ExtractTag<Extractee>{});
 };
 
+template<typename Extractee, std::endian DataEndianness = std::endian::native>
+struct Extractor{
 
+    template<typename StreamType, typename... Ts>
+    Extractee operator()(StreamType&& dataStream, Ts&&... ts) const; //{
+    //    return Extract<Extractee, DataEndianness>(std::forward<StreamType>(dataStream), std::forward<Ts>(ts)...);
+    //}
+};
+
+template<typename Extractee, std::endian DataEndianness = std::endian::native>
+inline constexpr Extractor<Extractee, DataEndianness> extract{};
 
 template<TriviallyCopyable DataType, std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream>
 DataType Extract(StreamType&& dataStream){
@@ -155,8 +165,8 @@ void Extract(StreamType&& dataStream, DataType* start, DataType* end){
 
 template<std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream, typename ExtracteeA, typename ExtracteeB>
 std::pair<ExtracteeA, ExtracteeB> Extract(StreamType&& dataStream, ExtractTag<std::pair<ExtracteeA, ExtracteeB>>){
-    return {Extract<ExtracteeA, DataEndianness>(std::forward<StreamType>(dataStream)),
-            Extract<ExtracteeB, DataEndianness>(std::forward<StreamType>(dataStream))};
+    return {extract<ExtracteeA, DataEndianness>(std::forward<StreamType>(dataStream)),
+            extract<ExtracteeB, DataEndianness>(std::forward<StreamType>(dataStream))};
 }
 
 template<std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream, typename ExtracteeA, typename ExtracteeB>
@@ -214,7 +224,7 @@ std::vector<ValueType, Allocator> Extract(StreamType&& inFile, ExtractTag<std::v
 
 }
 
-template<std::ranges::contiguous_range Extractee, std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream, typename... Ts>
+template<std::ranges::contiguous_range Extractee, std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream>
     requires (!CustomExtract<Extractee, DataEndianness, StreamType> && TriviallyCopyable<std::ranges::range_value_t<Extractee>>)
 Extractee Extract(StreamType&& dataStream){
     const size_t rangeSize = Extract<size_t, DataEndianness>(std::forward<StreamType>(dataStream));
@@ -237,7 +247,7 @@ Extractee Extract(StreamType&& dataStream){
     //Extract<DataEndianness, StreamType>(std::forward<StreamType>(dataStream), std::forward<Ts>(ts)..., ExtractTag<Extractee>{});
 };
 
-
+/*
 template<typename Extractee, std::endian DataEndianness = std::endian::native>
 struct Extractor{
 
@@ -249,7 +259,13 @@ struct Extractor{
 
 template<typename Extractee, std::endian DataEndianness = std::endian::native>
 inline constexpr Extractor<Extractee, DataEndianness> extract{};
+*/
 
+template<typename Extractee, std::endian DataEndianness>
+template<typename StreamType, typename... Ts>
+Extractee Extractor<Extractee, DataEndianness>::operator()(StreamType&& dataStream, Ts&&... ts) const {
+    return Extract<Extractee, DataEndianness>(std::forward<StreamType>(dataStream), std::forward<Ts>(ts)...);
+}
 
 /*
 template<TriviallyCopyable DataType, std::endian DataEndianness>

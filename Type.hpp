@@ -195,12 +195,18 @@ AlignedPtr<ValueType, align> MakeAlignedPtrHelper(ValueType* ptr){
     return AlignedPtr<ValueType, align>{ptr};
 }
 
+template<typename ValueType, typename AlignedContainer>
+ValueType* MakeAlignedPtr(ValueType* ptr, AlignedContainer&){
+    return ptr;
+}
 
 template<typename ValueType, typename AlignedContainer>
     requires (std::align_val_t{AlignedContainer::alignment} >= std::align_val_t{alignof(ValueType)})
 AlignedPtr<ValueType, static_cast<size_t>(AlignedContainer::alignment)> MakeAlignedPtr(ValueType* ptr, AlignedContainer&){
     return MakeAlignedPtrHelper<ValueType, static_cast<std::size_t>(AlignedContainer::alignment)>(ptr);
 }
+
+
 
 /*
 template<typename ValueType, size_t align>

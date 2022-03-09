@@ -15,12 +15,14 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <filesystem>
 #include <fstream>
 #include <exception>
+#include <iostream>
 #include <new>
 
 #include "../Type.hpp"
 #include "../SIMD/VectorSpan.hpp"
-
 #include "../AlignedMemory/DynamicArray.hpp"
+
+#include "DataIterator.hpp"
 
 namespace nnd{
 
@@ -51,13 +53,17 @@ size_t EntryPadding(std::size_t entryLength){
     //((sizeof(DataType)*entryLength)%alignment > 0) ? alignment - entryLength%alignment : 0
 }
 
-
-template<typename DataType, size_t align=32>
+using namespace ann::udl;
+template<typename DataType, std::align_val_t align=32_a>
 struct DataSet{
     using value_type = DataType;
-    using DataView = typename DefaultDataView<ann::aligned_array<DataType, std::align_val_t{align}>>::ViewType;
-    using ConstDataView = typename DefaultDataView<ann::aligned_array<DataType, std::align_val_t{align}>>::ViewType;
-    using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, align>;
+    using DataView = typename DefaultDataView<ann::aligned_array<DataType, align>>::ViewType;
+    using ConstDataView = typename DefaultDataView<ann::aligned_array<DataType, align>>::ViewType;
+    using const_vector_view = ann::vector_span<const value_type, ann::defaultInstructionSet, static_cast<std::size_t>(align)>;
+
+    using iterator = ann::data_iterator<DataType, align>;
+    using const_iterator = ann::data_iterator<const DataType, align>;
+
     //using iterator = typename std::vector<DataEntry>::iterator;
     //using const_iterator = typename std::vector<DataEntry>::const_iterator;
     //std::valarray<unsigned char> rawData;
@@ -66,39 +72,42 @@ struct DataSet{
 
     private:
     //DynamicArray<DataType> samples;
-    size_t sampleLength;
-    size_t numberOfSamples;
-    size_t indexStart;
+    std::size_t entry_length;
+    std::size_t length_with_padding;
+    std::size_t index_start;
     ann::aligned_array<DataType, alignment> samples;
 
     public:
-    DataSet(std::filesystem::path dataPath, const size_t entryLength, const size_t endEntry, const size_t startEntry = 0, const size_t fileHeader = 0):
-        sampleLength(entryLength),
-        numberOfSamples(endEntry-startEntry),
-        indexStart(startEntry),
+    DataSet(std::filesystem::path data_path, std::size_t entry_length, std::size_t end_entry, std::size_t start_entry = 0, std::size_t file_header = 0):
+        entry_length{entry_length},
+        length_with_padding{entry_length + EntryPadding<DataType, alignment>(entry_length)},
+        index_start(start_entry),
         samples(){
-            size_t padding = EntryPadding<DataType, alignment>(entryLength);
+            
+            std::size_t number_of_entries = end_entry - start_entry;
 
-            assert(padding==0); 
-            std::ifstream dataStream(dataPath, std::ios_base::binary);
+            assert(length_with_padding==entry_length); 
+            std::ifstream dataStream(data_path, std::ios_base::binary);
 
-            if (!dataStream.is_open()) throw std::filesystem::filesystem_error("File could not be opened.", dataPath, std::make_error_code(std::io_errc::stream));
+            if (!dataStream.is_open()) throw std::filesystem::filesystem_error("File could not be opened.", data_path, std::make_error_code(std::io_errc::stream));
 
-            const size_t numElements = sampleLength * numberOfSamples;
+            const size_t numElements = length_with_padding * number_of_entries;
 
-            ann::aligned_array<float, alignment> dataArr( numElements );
+            ann::aligned_array<value_type, alignment> dataArr( numElements );
 
-            dataStream.seekg(fileHeader + entryLength*startEntry);
+            dataStream.seekg(file_header + entry_length*start_entry);
             dataStream.read(reinterpret_cast<char*>(dataArr.begin()), numElements*sizeof(DataType));
 
             this->samples = std::move(dataArr);
-            //for (const auto& entry: this->samples) std::cout << entry << std::endl;
+            //if constexpr(std::same_as<uint32_t, value_type>){
+            //    for (const auto& entry: this->samples) std::cout << entry << std::endl;
+            //}
             
     }
 
 
-    size_t IndexStart() const{
-        return indexStart;
+    std::size_t IndexStart() const{
+        return index_start;
     }
     /*
     DataView operator[](size_t i){
@@ -109,10 +118,14 @@ struct DataSet{
         return {samples.begin() + i*sampleLength, sampleLength};
     }
     */
-    DataView operator[](size_t i){
-        value_type* dataPtr = samples.get();
-        dataPtr += i * sampleLength;
-        return DataView(MakeAlignedPtr(dataPtr, *this), sampleLength);
+    DataView operator[](std::size_t i){
+        value_type* dataPtr = samples.data();
+        dataPtr += i * entry_length;
+        if constexpr(alignment > ann::align_val_of<value_type>){
+            return DataView(MakeAlignedPtr(dataPtr, *this), entry_length);
+        } else {
+            return DataView(dataPtr, entry_length);
+        }
         /*
         AlignedPtr<value_type, alignment> ptr = samples.GetAlignedPtr(sampleLength);
         ptr += i;
@@ -121,10 +134,10 @@ struct DataSet{
         //return blockData[i];
     }
     
-    ConstDataView operator[](size_t i) const{
+    ConstDataView operator[](std::size_t i) const{
         const value_type* dataPtr = samples.data();
-        dataPtr += i * sampleLength;
-        return ConstDataView(MakeAlignedPtr(dataPtr, *this), sampleLength);
+        dataPtr += i * entry_length;
+        return ConstDataView(MakeAlignedPtr(dataPtr, *this), entry_length);
         /*
         AlignedPtr<const value_type, alignment> ptr = samples.GetAlignedPtr(sampleLength);
         ptr += i;
@@ -132,38 +145,38 @@ struct DataSet{
         */
     }
 
-    size_t size() const{
-        return numberOfSamples;
+    iterator begin(){
+        return iterator{length_with_padding, entry_length, samples.data()};
     }
 
-    size_t SampleLength() const{
-        return sampleLength;
-    }
-    /*
-    constexpr iterator begin() noexcept{
-        return samples.begin();
+    const_iterator begin() const{
+        return const_iterator{length_with_padding, entry_length, samples.data()};
     }
 
-    constexpr const_iterator begin() const noexcept{
-        return samples.begin();
+    const_iterator cbegin() const{
+        return const_iterator{length_with_padding, entry_length, samples.data()};
     }
 
-    constexpr const_iterator cbegin() const noexcept{
-        return samples.cbegin();
+    iterator end(){
+        return iterator{length_with_padding, entry_length, samples.data() + length_with_padding*(size())};
     }
 
-    constexpr iterator end() noexcept{
-        return samples.end();
+    const_iterator end() const{
+        return const_iterator{length_with_padding, entry_length, samples.data() + length_with_padding*(size())};
     }
 
-    constexpr const_iterator end() const noexcept{
-        return samples.end();
+    const_iterator cend() const{
+        return const_iterator{length_with_padding, entry_length, samples.data() + length_with_padding*(size())};
     }
 
-    constexpr const_iterator cend() const noexcept{
-        return samples.cend();
+    std::size_t size() const{
+        return samples.size()/(length_with_padding);
     }
-    */
+
+    std::size_t SampleLength() const{
+        return entry_length;
+    }
+    
 
 };
 

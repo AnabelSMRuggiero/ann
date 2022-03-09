@@ -168,8 +168,8 @@ struct dynamic_array {
         array_size{ std::ranges::size(range_to_copy) } {
 
             auto initalizer = [&](){
-                std::ranges::uninitialized_copy(std::ranges::begin(std::forward<OtherRange>(range_to_copy)), 
-                                                std::ranges::end(std::forward<OtherRange>(range_to_copy)), 
+                std::ranges::uninitialized_copy(std::ranges::begin(range_to_copy), 
+                                                std::ranges::end(range_to_copy), 
                                                 array_begin,
                                                 array_begin+array_size);
             };
