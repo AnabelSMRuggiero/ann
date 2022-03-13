@@ -145,8 +145,7 @@ struct dynamic_array {
     size_type array_size{ 0 };
 
   public:
-    dynamic_array() requires std::is_default_constructible_v<Allocator>
-    = default;
+    dynamic_array() requires std::is_default_constructible_v<Allocator> = default;
 
     dynamic_array(const allocator_type& alloc) noexcept : alloc{ alloc } {}
 
