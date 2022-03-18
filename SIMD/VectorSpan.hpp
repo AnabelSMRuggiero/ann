@@ -90,7 +90,7 @@ struct vector_span_iterator {
     auto operator<=>(vector_span_iterator &rhs) { return currentElement <=> rhs.currentElement; }
 };
 
-template <typename ElementType, InstructionSet instructions = defaultInstructionSet, size_t align = 32>
+template <typename ElementType, InstructionSet instructions = defaultInstructionSet, size_t align = 64>
 struct vector_span {
 
     using value_type = std::remove_cv_t<ElementType>;

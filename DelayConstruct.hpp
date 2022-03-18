@@ -23,9 +23,7 @@ namespace internal{
 template<typename DelayType, typename Functor>
 struct DelayConstructHelper{
     
-    Functor&& func;
-    
-    
+    Functor func;
 
     operator DelayType() noexcept(noexcept(func())){
         return func();
@@ -35,7 +33,7 @@ struct DelayConstructHelper{
 }
 
 template<typename DelayType, std::invocable<> Functor>
-    requires std::is_constructible_v<DelayType, std::invoke_result_t<Functor>>
+    requires (std::is_constructible_v<DelayType, std::invoke_result_t<Functor>> || std::same_as<DelayType, std::invoke_result_t<Functor>>)
 auto DelayConstruct(Functor&& func) noexcept {
     return internal::DelayConstructHelper<DelayType, Functor>{std::forward<Functor>(func)};
 }
@@ -43,10 +41,9 @@ auto DelayConstruct(Functor&& func) noexcept {
 template<typename DelayType, typename... Ts>
     requires std::is_constructible_v<DelayType, Ts...>
 auto DelayConstruct(Ts&&... ts) noexcept {
-    auto constructor = [&](){
+    return DelayConstruct<DelayType>([&](){
         return DelayType(std::forward<Ts>(ts)...);
-    };
-    return DelayConstruct<DelayType>(constructor);
+    });
 }
 }
 

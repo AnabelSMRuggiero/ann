@@ -22,6 +22,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../SIMD/VectorSpan.hpp"
 #include "../AlignedMemory/DynamicArray.hpp"
 
+#include "../AlignedMemory/AlignedAllocator.hpp"
 #include "DataIterator.hpp"
 
 namespace nnd{
@@ -54,7 +55,7 @@ size_t EntryPadding(std::size_t entryLength){
 }
 
 using namespace ann::udl;
-template<typename DataType, std::align_val_t align=32_a>
+template<typename DataType, std::align_val_t align=ann::default_align>
 struct DataSet{
     using value_type = DataType;
     using DataView = typename DefaultDataView<ann::aligned_array<DataType, align>>::ViewType;

@@ -26,7 +26,18 @@ constexpr std::align_val_t operator""_a(unsigned long long alignment) { return s
 
 } // namespace udl
 
+inline constexpr std::align_val_t align_cast(std::size_t alignment){
+    return std::align_val_t{alignment};
+}
 
+inline constexpr std::size_t size_cast(std::align_val_t alignment){
+    return static_cast<std::size_t>(alignment);
+}
+
+template<std::align_val_t alignment>
+using alignment_constant = std::integral_constant<std::align_val_t, alignment>;
+
+inline constexpr std::align_val_t default_align = 64_a;
 
 template<typename Type, std::align_val_t align>
 struct aligned_allocator {
@@ -109,41 +120,7 @@ struct allocator_deleter {
     [[no_unique_address]] Allocator alloc;
     size_type memorySize;
 };
-/*
-// Due allocator shenangans, could have different semantics.
-template<typename Type, base_allocator_functionality Alloc>
-    requires std::same_as<Type, typename std::allocator_traits<Alloc>::value_type>
-struct allocated_unique;
 
-template<typename Type, stateless_allocator Alloc>
-struct allocated_unique<Type, Alloc> {
-    using deleter = allocator_deleter<Alloc>;
-    using pointer = typename deleter::pointer;
-
-    pointer release() noexcept { return impl.release(); }
-
-    void reset(pointer ptr = pointer()) noexcept requires(!std::is_array_v<Type>) { impl.reset(ptr); }
-
-    // array overloads of reset
-
-    void swap(allocated_unique &other) noexcept { std::ranges::swap(impl, other.impl); }
-
-    pointer get() noexcept { return impl.get(); }
-    deleter &get_deleter() noexcept { impl.get_deleter(); }
-    const deleter &get_deleter() const noexcept { impl.get_deleter(); }
-
-    operator bool() { return bool(impl); }
-
-    std::add_lvalue_reference_t<Type> operator*() const noexcept(noexcept(*std::declval<pointer>())) requires(!std::is_array_v<Type>) {
-        return *impl;
-    }
-    pointer operator->() const noexcept requires(!std::is_array_v<Type>) { return get(); }
-
-    Type &operator[](std::size_t index) requires std::is_array_v<Type> { return impl[index]; }
-
-  private : std::unique_ptr<Type, deleter> impl;
-};
-*/
 } // namespace ann
 
 #endif

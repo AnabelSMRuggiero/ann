@@ -30,6 +30,8 @@ struct data_iterator{
 
     static constexpr std::align_val_t alignment = align;
 
+    data_iterator() = default;
+
     constexpr data_iterator(const size_t arraySize, const size_t viewSize, ElementType* arrayStart): arraySize(arraySize), viewSize(viewSize), arrayStart(arrayStart) {}
 
     private:

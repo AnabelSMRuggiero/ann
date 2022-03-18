@@ -105,43 +105,6 @@ AlignedPtr<ValueType, static_cast<size_t>(AlignedContainer::alignment)> MakeAlig
 }
 
 
-
-/*
-template<typename ValueType, size_t align>
-struct AlignedPtr{
-    
-    //template<typename ArrayType>
-    friend DynamicArray<std::remove_cv_t<ValueType>, align>;
-
-
-    AlignedPtr& operator+=(const std::ptrdiff_t amount){
-        ptr = ptr + amount * entriesToMove;
-        return *this;
-    }
-
-    operator ValueType*() const{
-        return ptr;
-    }
-
-    private:
-    
-    ValueType* ptr;
-    size_t entriesToMove;
-
-    AlignedPtr(ValueType* ptr, size_t entriesToMove): ptr(ptr), entriesToMove(entriesToMove){}
-};
-
-template<typename ValueType, size_t align>
-AlignedPtr<ValueType, align> DynamicArray<ValueType, align>::GetAlignedPtr(size_t entriesToJump){
-    return AlignedPtr<ValueType, align>(begin(), entriesToJump);
-}
-
-template<typename ValueType, size_t align>
-AlignedPtr<const ValueType, align> DynamicArray<ValueType, align>::GetAlignedPtr(size_t entriesToJump) const{
-    return AlignedPtr<const ValueType, align>(begin(), entriesToJump);
-}
-*/
-
 template<typename Type, typename OtherType>
 concept is_not = !std::same_as<std::remove_cvref_t<Type>, std::remove_cvref_t<OtherType>>;
 
@@ -161,7 +124,7 @@ constexpr bool is_aligned_contiguous_range_v = is_aligned_contiguous_range<Type>
 
 
 
-template<typename ElementType, std::size_t align=32>
+template<typename ElementType, std::size_t align=64>
 struct AlignedSpan{
 
     using value_type = std::remove_cv_t<ElementType>;
@@ -337,10 +300,9 @@ struct ZipRange{
 };
 
 
-
-
 template<typename DataType>
 concept TriviallyCopyable = std::is_trivially_copyable_v<DataType>;
+
 }
 
 template <typename ValueType, std::size_t alignment>

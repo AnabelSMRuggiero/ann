@@ -23,6 +23,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../DataDeserialization.hpp"
 #include "../SIMD/VectorSpan.hpp"
 #include "../Type.hpp"
+#include "../AlignedMemory/AlignedAllocator.hpp"
 
 #include "DataIterator.hpp"
 #include "DataSet.hpp"
@@ -112,7 +113,7 @@ struct DataBlockIterator{
 
 //Presumably, each project would only need to instantiate for a single FloatType
 using namespace ann::udl;
-template<typename ElementType, std::align_val_t align = 32_a>
+template<typename ElementType, std::align_val_t align = ann::default_align>
     requires (alignof(ElementType) <= sizeof(ElementType))
 struct DataBlock{
     using value_type = ElementType;
