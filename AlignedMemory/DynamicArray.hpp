@@ -11,6 +11,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef ANN_DYNAMICARRAY_HPP
 #define ANN_DYNAMICARRAY_HPP
 
+#include <bits/iterator_concepts.h>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -128,7 +129,7 @@ struct dynamic_array {
     inline static constexpr bool noexcept_construct = detect_noexcept_construct<value_type, allocator_type, Types...>();
 
     inline static constexpr auto construct =
-        []<typename... Types>(pointer ptr, allocator_type& alloc, Types&&... args) noexcept(noexcept_construct<Types...>) {
+        []<typename... Types>(allocator_type& alloc, pointer ptr, Types&&... args) noexcept(noexcept_construct<Types...>) {
         alloc_traits::construct(alloc, ptr, std::forward<Types>(args)...);
     };
 
@@ -138,15 +139,15 @@ struct dynamic_array {
         };
     };
     
-    /*
-    inline static constexpr auto bind_copy_construct = [](allocator_type & alloc) noexcept(true) -> auto {
-        return [&alloc](pointer to, pointer from) noexcept(noexcept_construct<reference>) { construct(to, alloc, *from); };
+    
+    inline static constexpr auto bind_copy_construct = [](allocator_type & alloc) noexcept -> auto {
+        return [&alloc]<typename IterOther>(pointer to, IterOther&& from) noexcept(noexcept_construct<std::iter_reference_t<IterOther>>) { construct(alloc, to, *from); };
     };
 
-    inline static constexpr auto bind_move_construct = [](allocator_type & alloc) noexcept(true) -> auto {
-        return [&alloc](pointer to, pointer from) noexcept(noexcept_construct<value_type&&>) { construct(to, alloc, std::move(*from)); };
+    inline static constexpr auto bind_move_construct = [](allocator_type & alloc) noexcept -> auto {
+        return [&alloc](pointer to, pointer from) noexcept(noexcept_construct<value_type&&>) { construct(alloc, to, std::move(*from)); };
     };
-    */
+    
     [[no_unique_address]] Allocator alloc{};
     pointer array_begin{ nullptr };
     size_type array_size{ 0 };
@@ -174,13 +175,8 @@ struct dynamic_array {
         array_begin{ allocate(alloc, std::ranges::size(range_to_copy)) }, 
         array_size{ std::ranges::size(range_to_copy) } {
 
-            auto initalizer = [&](){
-                std::ranges::uninitialized_copy(range_to_copy | std::views::transform([&](const auto& element){
-                                                    return std::make_obj_using_allocator<value_type>(alloc, element);
-                                                }), 
-                                                *this);
-            };
-            initalize(initalizer);
+            initalize(bind_copy_construct(alloc), std::ranges::begin(range_to_copy));
+
     }
 
     template<std::input_iterator RangeBegin, std::sized_sentinel_for<RangeBegin> RangeEnd>
@@ -190,13 +186,8 @@ struct dynamic_array {
         array_begin{ allocate(alloc, copy_end - copy_start) }, 
         array_size{ copy_end - copy_start } {
 
-            auto initalizer = [&](){
-                std::ranges::uninitialized_move(std::ranges::subrange(copy_start, copy_end) | std::views::transform([&](auto&& element){
-                                                    return std::make_obj_using_allocator<value_type>(alloc, std::move(element));
-                                                }), 
-                                                *this);
-            };
-            initalize(initalizer);
+            initalize(bind_copy_construct(alloc), std::forward<RangeBegin>(copy_start));
+
     }
 
     //I'll most likely need to just replace this with something that uses a tuple of args.
@@ -216,10 +207,10 @@ struct dynamic_array {
         dynamic_array(const dynamic_array& other)
             : alloc{ alloc_traits::select_on_container_copy_construction(other.alloc) }, array_begin{ allocate(alloc, other.array_size) },
               array_size{ other.array_size } {
-            auto initalizer = [&]() noexcept(std::is_nothrow_copy_constructible_v<value_type>) -> void {
+            auto initalizer = [&](pointer this_side, pointer other_side) noexcept(std::is_nothrow_copy_constructible_v<value_type>) -> void {
                 std::uninitialized_copy(other.array_begin, other.array_begin + array_size, array_begin);
             };
-            initalize(initalizer);
+            initalize(bind_copy_construct(alloc), other.begin());
         }
 
         dynamic_array(const dynamic_array& other, const allocator_type& copy_alloc)
@@ -228,7 +219,7 @@ struct dynamic_array {
 
                 std::uninitialized_copy(other.array_begin, other.array_begin + array_size, array_begin);
             };
-            initalize(initalizer);
+            initalize(bind_copy_construct(alloc), other.begin());
         }
 
         dynamic_array(dynamic_array&& other) noexcept
@@ -238,18 +229,48 @@ struct dynamic_array {
         }
 
       private:
-        void initalize(std::invocable<pointer> auto&& initalizer) noexcept requires(noexcept(initalizer)) {
+        template<std::invocable<pointer> Functor>
+        void initalize(Functor&& initalizer) noexcept requires(std::is_nothrow_invocable_v<Functor, pointer>) {
             pointer current = begin();
             for (; current != end(); current += 1) {
                 initalizer(current);
             }
         }
 
-        void initalize(std::invocable<pointer> auto&& initalizer) noexcept requires(!noexcept(initalizer)) {
+        template<typename Functor, typename OtherIter>
+            requires std::invocable<pointer, OtherIter&&>
+        void initalize(Functor&& initalizer, OtherIter&& begin_other) noexcept requires(std::is_nothrow_invocable_v<Functor, pointer, OtherIter&&>) {
+            pointer current = begin();
+            for (; current != end(); current += 1) {
+                initalizer(current, std::forward<OtherIter>(begin_other));
+            }
+        }
+
+        template<std::invocable<pointer> Functor>
+        void initalize(Functor&& initalizer)  requires(!std::is_nothrow_invocable_v<Functor, pointer>) {
             pointer current = begin();
             try {
                 for (; current != end(); current += 1) {
                     initalizer(current);
+                }
+            } catch (...) {
+                for (; current != begin(); current -= 1) {
+                    (current - 1)->~value_type();
+                }
+                deallocate(alloc, array_begin, array_size);
+                array_begin = nullptr;
+                array_size = 0;
+                throw;
+            }
+        }
+
+        template<typename Functor, typename OtherIter>
+            requires std::invocable<pointer, OtherIter&&>
+        void initalize(Functor&& initalizer, OtherIter&& begin_other) requires(!std::is_nothrow_invocable_v<Functor, pointer, OtherIter&&>) {
+            pointer current = begin();
+            try {
+                for (; current != end(); current += 1, begin_other += 1) {
+                    initalizer(current, std::forward<OtherIter>(begin_other));
                 }
             } catch (...) {
                 for (; current != begin(); current -= 1) {
@@ -296,12 +317,10 @@ struct dynamic_array {
 
         void no_throw_move(dynamic_array& other) noexcept {
             deallocate(alloc, array_begin, array_size);
-            array_begin = other.array_begin;
-            array_size = other.array_size;
-            other.array_begin = nullptr;
-            other.array_size = 0;
+            array_begin = std::exchange(other.array_begin, nullptr);
+            array_size = std::exchange(other.array_size, 0);
         }
-
+        //TODO: fix this to put constructions through alloc_traits
         void element_copy(const dynamic_array& other, pointer new_array, std::invocable<> auto&& cleanup) noexcept requires
             std::is_nothrow_copy_constructible_v<value_type> {
             std::uninitialized_copy(other.array_begin, other.array_begin + other.array_size, new_array);
@@ -318,15 +337,14 @@ struct dynamic_array {
         }
 
       public:
-        dynamic_array& operator=(const dynamic_array& other) requires alloc_prop_copyassign {
+        dynamic_array& operator=(const dynamic_array& other) requires (alloc_prop_copyassign) {
             pointer new_array = allocate(other.alloc, other.array_size);
 
             element_copy(other, new_array, [&]() { deallocate(other.alloc, new_array, other.array_size); });
 
-            deallocate(alloc, array_begin, array_size);
-            alloc = other.alloc;
-            array_begin = new_array;
-            array_size = other.array_size;
+            deallocate(std::exchange(alloc,       other.alloc      ),
+                       std::exchange(array_begin, other.array_begin),
+                       std::exchange(array_size,  other.array_size ));
 
             return *this;
         }
@@ -337,9 +355,9 @@ struct dynamic_array {
 
             element_copy(other, new_array, [&]() { deallocate(alloc, new_array, other.array_size); });
 
-            deallocate(alloc, array_begin, array_size);
-            array_begin = new_array;
-            array_size = other.array_size;
+            deallocate(alloc, 
+                       std::exchange(array_begin, other.array_begin),
+                       std::exchange(array_size,  other.array_size ));
 
             return *this;
         }
