@@ -71,7 +71,7 @@ struct Zero : Op<0> {
     };
 
     template <VectorRequirements<float, __m256> RequirementsTag>
-    auto operator()(RequirementsTag) const {
+    constexpr auto operator()(RequirementsTag) const {
         return OperationReturn_t<RequirementsTag>{ _mm256_setzero_ps() };
     }
 };
@@ -85,13 +85,13 @@ struct Load : Op<1> {
     };
 
     template <VectorRequirements<float, __m256> VectorRef>
-    OperationReturn_t<VectorRef> operator()(const VectorRef &operand1) const {
+    constexpr OperationReturn_t<VectorRef> operator()(const VectorRef &operand1) const {
         return { _mm256_loadu_ps(operand1.dataPtr) };
     }
 
     template <VectorRequirements<float, __m256> VectorRef>
         requires(VectorRef::alignment >= 32)
-    OperationReturn_t<VectorRef>
+    constexpr OperationReturn_t<VectorRef>
     operator()(const VectorRef &operand1) const { return { _mm256_load_ps(operand1.dataPtr) }; }
 };
 
@@ -102,7 +102,7 @@ struct VectorReduce : Op<1> {
     };
 
     template <VectorRequirements<float, __m256> DataVector>
-    float operator()(DataVector &operand1) const {
+    constexpr float operator()(DataVector &operand1) const {
         __m256 temp = _mm256_hadd_ps(operand1.vec, _mm256_setzero_ps());
         temp = _mm256_hadd_ps(temp, _mm256_setzero_ps());
         auto constexprBranchElision = []<typename Vec>(Vec vec) -> auto {
@@ -122,7 +122,7 @@ struct Add : Op<2> {
     };
 
     template <VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
-    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
+    constexpr OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
         return OperationReturn_t<LHSVector, RHSVector>{ _mm256_add_ps(operand1.vec, operand2.vec) };
     }
 };
@@ -133,7 +133,7 @@ struct Subtract : Op<2> {
     };
 
     template <VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
-    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
+    constexpr OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
         return OperationReturn_t<LHSVector, RHSVector>{ _mm256_sub_ps(operand1.vec, operand2.vec) };
     }
 };
@@ -144,7 +144,7 @@ struct Multiply : Op<2> {
     };
 
     template <VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
-    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
+    constexpr OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
         return OperationReturn_t<LHSVector, RHSVector>{ _mm256_mul_ps(operand1.vec, operand2.vec) };
     }
 };
@@ -155,7 +155,7 @@ struct Divide : Op<2> {
     };
 
     template <VectorRequirements<float, __m256> LHSVector, VectorRequirements<float, __m256> RHSVector>
-    OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
+    constexpr OperationReturn_t<LHSVector, RHSVector> operator()(const LHSVector &operand1, const RHSVector &operand2) const {
         return OperationReturn_t<LHSVector, RHSVector>{ _mm256_div_ps(operand1.vec, operand2.vec) };
     }
 };
@@ -166,13 +166,13 @@ struct Store : Op<2> {
     };
 
     template <VectorRequirements<float, __m256> VectorRef, VectorRequirements<float, __m256> DataVector>
-    void operator()(VectorRef operand1, const DataVector &operand2) const {
+    constexpr void operator()(VectorRef operand1, const DataVector &operand2) const {
         return _mm256_storeu_ps(operand1.dataPtr, operand2.vec);
     }
 
     template <VectorRequirements<float, __m256> VectorRef, VectorRequirements<float, __m256> DataVector>
         requires(VectorRef::alignment >= 32)
-    void operator()(VectorRef operand1, const DataVector &operand2) const { return _mm256_store_ps(operand1.dataPtr, operand2.vec); }
+    constexpr void operator()(VectorRef operand1, const DataVector &operand2) const { return _mm256_store_ps(operand1.dataPtr, operand2.vec); }
 };
 
 struct FMA : Op<3> {
@@ -180,7 +180,7 @@ struct FMA : Op<3> {
 
     template <VectorRequirements<float, __m256> FirstVector, VectorRequirements<float, __m256> SecondVector,
               VectorRequirements<float, __m256> ThirdVector>
-    auto operator()(const FirstVector &operand1, const SecondVector &operand2, const ThirdVector &operand3) const {
+    constexpr auto operator()(const FirstVector &operand1, const SecondVector &operand2, const ThirdVector &operand3) const {
         return OperationReturn_t<FirstVector, SecondVector, ThirdVector>{ _mm256_fmadd_ps(operand1.vec, operand2.vec, operand3.vec) };
     }
 };
@@ -190,7 +190,7 @@ struct FNMA : Op<3> {
 
     template <VectorRequirements<float, __m256> FirstVector, VectorRequirements<float, __m256> SecondVector,
               VectorRequirements<float, __m256> ThirdVector>
-    auto operator()(const FirstVector &operand1, const SecondVector &operand2, const ThirdVector &operand3) const {
+    constexpr auto operator()(const FirstVector &operand1, const SecondVector &operand2, const ThirdVector &operand3) const {
 
         return OperationReturn_t<FirstVector, SecondVector, ThirdVector>{ _mm256_fnmadd_ps(operand1.vec, operand2.vec, operand3.vec) };
     }
@@ -201,7 +201,7 @@ struct FMS : Op<3> {
 
     template <VectorRequirements<float, __m256> FirstVector, VectorRequirements<float, __m256> SecondVector,
               VectorRequirements<float, __m256> ThirdVector>
-    auto operator()(const FirstVector &operand1, const SecondVector &operand2, const ThirdVector &operand3) const {
+    constexpr auto operator()(const FirstVector &operand1, const SecondVector &operand2, const ThirdVector &operand3) const {
         return OperationReturn_t<FirstVector, SecondVector, ThirdVector>{ _mm256_fmsub_ps(operand1.vec, operand2.vec, operand3.vec) };
     }
 };
