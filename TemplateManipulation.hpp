@@ -10,13 +10,21 @@ struct parameter_pack{
 
 };
 
+template<typename TemplatedType>
+struct extract_pack_struct;
+
+template< template<typename...> typename TemplateParam, typename... Pack>
+struct extract_pack_struct<TemplateParam<Pack...>>{
+    using type = parameter_pack<Pack...>;
+};
+
 template< template<typename...> typename TemplateParam, typename... Pack>
 consteval parameter_pack<Pack...> extract_pack(const TemplateParam<Pack...>&){
     return parameter_pack<Pack...>{};
 }
 
 template< typename TemplatedType>
-using extract_pack_t = decltype(extract_pack(std::declval<TemplatedType>()));
+using extract_pack_t = typename extract_pack_struct<TemplatedType>::type;
 
 template<typename... Types>
 struct pack_reverser{

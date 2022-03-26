@@ -11,7 +11,6 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef ANN_DYNAMICARRAY_HPP
 #define ANN_DYNAMICARRAY_HPP
 
-#include <bits/iterator_concepts.h>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -261,7 +260,7 @@ struct dynamic_array {
             requires std::invocable<Functor, pointer, OtherIter>
         void initalize(Functor&& initalizer, OtherIter&& begin_other) noexcept requires(std::is_nothrow_invocable_v<Functor, pointer, OtherIter>) {
             pointer current = begin();
-            for (; current != end(); current += 1) {
+            for (; current != end(); current += 1, begin_other += 1) {
                 initalizer(current, std::forward<OtherIter>(begin_other));
             }
         }
