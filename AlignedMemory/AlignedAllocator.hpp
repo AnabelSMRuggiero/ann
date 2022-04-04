@@ -37,6 +37,9 @@ inline constexpr std::size_t size_cast(std::align_val_t alignment){
 template<std::align_val_t alignment>
 using alignment_constant = std::integral_constant<std::align_val_t, alignment>;
 
+template<typename Type>
+constexpr std::align_val_t align_val_of = static_cast<std::align_val_t>(alignof(Type));
+
 inline constexpr std::align_val_t default_align = 64_a;
 
 template<typename Type, std::align_val_t align>
@@ -84,17 +87,30 @@ struct aligned_allocator {
         ::operator delete(returningMemory, numberOfElements * sizeof(Type), alignment);
     }
 };
-template<typename Type>
+template<typename Allocator>
 struct allocator_alignment;
 
-template<typename Type, std::align_val_t align>
-struct allocator_alignment<aligned_allocator<Type, align>>{
-    using type = std::integral_constant<std::align_val_t, align>;
-    static constexpr std::align_val_t value = align;
+template< typename Allocator >
+concept alloc_has_alignment = requires{ {Allocator::alignment} -> std::convertible_to<std::align_val_t>; };
+
+template<typename Allocator>
+    requires (!alloc_has_alignment<Allocator>)
+struct allocator_alignment<Allocator>{
+    using type = alignment_constant<align_val_of<std::max_align_t>>;
+    static constexpr std::align_val_t value = align_val_of<std::max_align_t>;
+};
+
+template<alloc_has_alignment Allocator>
+struct allocator_alignment<Allocator>{
+    using type = std::integral_constant<std::align_val_t, Allocator::alignment>;
+    static constexpr std::align_val_t value = Allocator::alignment;
 };
 
 template<typename Type>
 constexpr std::align_val_t allocator_alignment_v = allocator_alignment<Type>::value;
+
+static_assert(alloc_has_alignment<aligned_allocator<std::byte, 64_a>>);
+static_assert(allocator_alignment_v<aligned_allocator<std::byte, 64_a>> == 64_a);
 
 template<typename Allocator>
 concept base_allocator_functionality = requires(Allocator alloc) {

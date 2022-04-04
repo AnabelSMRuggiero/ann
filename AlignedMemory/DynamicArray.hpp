@@ -14,6 +14,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <memory_resource>
 #include <new>
 #include <ranges>
 #include <type_traits>
@@ -44,12 +45,29 @@ using alloc_size_t = typename std::allocator_traits<Allocator>::size_type;
 
 template<typename Allocator>
 constexpr alloc_ptr_t<Allocator>
-aligned_allocate(Allocator&& alloc, alloc_size_t<Allocator> number_of_elements, std::align_val_t alignment) = delete;
+aligned_allocate(Allocator& alloc, alloc_size_t<Allocator> number_of_elements, std::align_val_t alignment) = delete;
+
+template<typename ValueType>
+constexpr alloc_ptr_t<std::pmr::polymorphic_allocator<ValueType>>
+aligned_allocate(std::pmr::polymorphic_allocator<ValueType>& alloc,
+                 alloc_size_t<std::pmr::polymorphic_allocator<ValueType>> number_of_elements,
+                 std::align_val_t alignment){
+    return static_cast<ValueType*>(alloc.allocate_bytes(number_of_elements * sizeof(ValueType), size_cast(alignment)));
+}
 
 template<typename Allocator>
 constexpr void aligned_deallocate(
-    Allocator&& alloc, alloc_ptr_t<Allocator> returning_memory, alloc_size_t<Allocator> number_of_elements,
+    Allocator& alloc, alloc_ptr_t<Allocator> returning_memory, alloc_size_t<Allocator> number_of_elements,
     std::align_val_t alignment) = delete;
+
+template<typename ValueType>
+constexpr void
+aligned_deallocate(std::pmr::polymorphic_allocator<ValueType>& alloc,
+                   alloc_ptr_t<std::pmr::polymorphic_allocator<ValueType>> returning_memory,
+                   alloc_size_t<std::pmr::polymorphic_allocator<ValueType>> number_of_elements,
+                   std::align_val_t alignment){
+    alloc.deallocate_bytes(returning_memory, number_of_elements * sizeof(ValueType), size_cast(alignment));
+}
 
 namespace internal {
 template<typename Type>
@@ -65,8 +83,7 @@ concept call_aligned_allocate = requires(Allocator&& alloc) {
 };
 } // namespace internal
 
-template<typename Type>
-constexpr std::align_val_t align_val_of = static_cast<std::align_val_t>(alignof(Type));
+
 
 template<typename ObjToConstruct, typename Alloc, typename... Types>
 concept constructible_by_alloc = std::is_constructible_v<ObjToConstruct, Types...> || std::is_constructible_v<ObjToConstruct, Types..., Alloc> || std::is_constructible_v<std::allocator_arg_t, Alloc, ObjToConstruct, Types...>;
@@ -95,6 +112,7 @@ template<
     internal::nonconst ValueType, internal::allocator_for<ValueType> Allocator = aligned_allocator<ValueType, align_val_of<ValueType>>,
     std::align_val_t align = align_val_of<ValueType>>
     requires(allocator_alignment_v<Allocator> >= align || internal::call_aligned_allocate<Allocator>)
+
 struct dynamic_array {
     using value_type = ValueType;
     using reference = ValueType&;
@@ -532,6 +550,11 @@ struct dynamic_array {
 // struct AlignedPtr;
 template<typename ValueType, std::align_val_t align = default_align>
 using aligned_array = dynamic_array<ValueType, aligned_allocator<ValueType, align>, align>;
+
+namespace pmr{
+template<typename ValueType, std::align_val_t align = default_align>
+using aligned_array = dynamic_array<ValueType, std::pmr::polymorphic_allocator<ValueType>, align>;
+}
 
 } // namespace ann
 

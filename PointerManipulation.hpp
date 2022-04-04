@@ -13,7 +13,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include <type_traits>
 
-namespace nnd{
+namespace ann{
     //Helper for casting between char/byte and another type
     template <typename RetType, typename ArgType>
     std::remove_pointer_t<RetType>* PtrCast(ArgType* ptrToCast){
