@@ -24,6 +24,28 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 namespace ann {
 
+template<typename Type>
+struct is_aligned_contiguous_range : std::false_type {};
+
+
+template<std::ranges::contiguous_range ArrayLike>
+    requires (static_cast<std::size_t>(ArrayLike::alignment) > alignof(std::ranges::range_value_t<ArrayLike>))
+struct is_aligned_contiguous_range<ArrayLike> : std::true_type {
+    static constexpr std::align_val_t alignment = ArrayLike::alignment;
+};
+
+template<std::ranges::contiguous_range ArrayLike>
+    requires (allocator_alignment_v<typename ArrayLike::allocator_type> > align_val_of<std::ranges::range_value_t<ArrayLike>>)
+struct is_aligned_contiguous_range<ArrayLike> : std::true_type {
+    static constexpr std::align_val_t alignment = allocator_alignment_v<typename ArrayLike::allocator_type>;
+};
+
+template<typename Range, std::align_val_t min_alignment>
+concept aligned_range = is_aligned_contiguous_range<Range>::alignment >= min_alignment;
+
+template<typename Type>
+constexpr bool is_aligned_contiguous_range_v = is_aligned_contiguous_range<Type>::value;
+
 
 template<typename ValueType, std::align_val_t align>
 struct aligned_ptr;
@@ -83,19 +105,7 @@ aligned_ptr<ValueType, AlignedRange::alignment> make_aligned_ptr(ValueType* ptr,
 }
 
 
-template<typename Type>
-struct is_aligned_contiguous_range : std::false_type {};
 
-
-template<std::ranges::contiguous_range ArrayLike>
-    requires (static_cast<std::size_t>(ArrayLike::alignment) > alignof(std::ranges::range_value_t<ArrayLike>))
-struct is_aligned_contiguous_range<ArrayLike> : std::true_type {};
-
-template<typename Range, std::align_val_t min_alignment>
-concept aligned_range = std::ranges::contiguous_range<Range> && (static_cast<std::align_val_t>(std::remove_reference_t<Range>::alignment) >= min_alignment);
-
-template<typename Type>
-constexpr bool is_aligned_contiguous_range_v = is_aligned_contiguous_range<Type>::value;
 
 
 

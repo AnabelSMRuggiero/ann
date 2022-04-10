@@ -16,7 +16,6 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <memory>
 #include <new>
 #include <type_traits>
-#include <vector>
 
 namespace ann {
 
@@ -67,13 +66,13 @@ struct aligned_allocator {
 
     ~aligned_allocator() = default;
 
-    Type* allocate(std::size_t numberOfElements, std::align_val_t allocAlign) {
+    [[nodiscard]] Type* allocate(std::size_t numberOfElements, std::align_val_t allocAlign) {
         allocAlign = std::max(allocAlign, alignment);
         void* allocatedMemory = ::operator new(numberOfElements * sizeof(Type), allocAlign);
         return std::assume_aligned<static_cast<std::size_t>(alignment)>(static_cast<Type*>(allocatedMemory));
     }
 
-    Type* allocate(std::size_t numberOfElements) {
+    [[nodiscard]] Type* allocate(std::size_t numberOfElements) {
         void* allocatedMemory = ::operator new(numberOfElements * sizeof(Type), alignment);
         return std::assume_aligned<static_cast<std::size_t>(alignment)>(static_cast<Type*>(allocatedMemory));
     }
@@ -87,6 +86,18 @@ struct aligned_allocator {
         ::operator delete(returningMemory, numberOfElements * sizeof(Type), alignment);
     }
 };
+
+template<typename LHSType, typename RHSType, std::align_val_t align>
+constexpr bool operator==(const aligned_allocator<LHSType, align>&, const aligned_allocator<RHSType, align>&) noexcept {
+    return true;
+}
+
+template<typename LHSType, std::align_val_t lhs_align, typename RHSType, std::align_val_t rhs_align>
+    requires (lhs_align != rhs_align)
+constexpr bool operator==(const aligned_allocator<LHSType, lhs_align>&, const aligned_allocator<RHSType, rhs_align>&) noexcept{
+    return false;
+}
+
 template<typename Allocator>
 struct allocator_alignment;
 
@@ -109,33 +120,6 @@ struct allocator_alignment<Allocator>{
 template<typename Type>
 constexpr std::align_val_t allocator_alignment_v = allocator_alignment<Type>::value;
 
-static_assert(alloc_has_alignment<aligned_allocator<std::byte, 64_a>>);
-static_assert(allocator_alignment_v<aligned_allocator<std::byte, 64_a>> == 64_a);
-
-template<typename Allocator>
-concept base_allocator_functionality = requires(Allocator alloc) {
-    typename std::allocator_traits<Allocator>;
-    {
-        std::allocator_traits<Allocator>::allocate(alloc, typename std::allocator_traits<Allocator>::size_type{})
-        } -> std::same_as<typename std::allocator_traits<Allocator>::pointer>;
-    std::allocator_traits<Allocator>::deallocate(
-        alloc, typename std::allocator_traits<Allocator>::pointer{}, typename std::allocator_traits<Allocator>::size_type{});
-};
-
-template<typename Alloc>
-concept stateless_allocator = base_allocator_functionality<Alloc> && typename std::allocator_traits<Alloc>::is_always_equal{};
-
-template<base_allocator_functionality Allocator>
-struct allocator_deleter {
-    using alloc_traits = typename std::allocator_traits<Allocator>;
-    using pointer = typename alloc_traits::pointer;
-    using size_type = typename alloc_traits::size_type;
-
-    void operator()(pointer returningMemory) { alloc_traits::deallocate(alloc, returningMemory, memorySize); }
-
-    [[no_unique_address]] Allocator alloc;
-    size_type memorySize;
-};
 
 } // namespace ann
 
