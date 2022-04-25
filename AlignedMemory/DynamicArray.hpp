@@ -100,9 +100,27 @@ consteval bool detect_noexcept_construct() {
 }
 
 template<typename ObjToConstruct, typename Alloc, typename... Types>
-
 consteval bool detect_noexcept_construct() {
     return false;
+}
+
+template<typename Range>
+using range_forward_reference = std::conditional_t<!std::is_lvalue_reference_v<Range> && !std::ranges::enable_borrowed_range<Range>,
+                                                 std::ranges::range_rvalue_reference_t<Range>,
+                                                 std::ranges::range_reference_t<Range>>;
+
+template<typename ForwardLike, typename Type>
+using forward_like_t = std::conditional_t<std::is_lvalue_reference_v<ForwardLike>, 
+                                        std::remove_reference_t<Type>&,
+                                        std::remove_reference_t<Type>&&>;
+
+template<typename ForwardLikeRange, typename Iter>
+decltype(auto) iter_forward_like(Iter&& iter){
+    if constexpr(!std::is_lvalue_reference_v<ForwardLikeRange> && !std::ranges::enable_borrowed_range<ForwardLikeRange>){
+        return std::ranges::iter_move(std::forward<Iter>(iter));
+    }else{
+        return *iter;
+    }
 }
 
 // TODO: consider lifting the guarantee that other owns nothing after move assign; that allows for branchless moves.
@@ -181,7 +199,15 @@ struct dynamic_array {
     inline static constexpr auto bind_move_construct = [](allocator_type & alloc) noexcept -> auto {
         return [&alloc](pointer to, auto&& from) noexcept(noexcept_construct<value_type&&>) 
             requires constructible_by_alloc<value_type, allocator_type, value_type&&> { 
-                construct(alloc, to, std::move(*from)); 
+                construct(alloc, to, std::ranges::iter_move(from)); 
+        };
+    };
+
+    template<typename Range>
+    static constexpr auto bind_forward_construct = [](allocator_type & alloc) noexcept -> auto {
+        return [&alloc](pointer to, auto&& from) noexcept(noexcept_construct<range_forward_reference<Range>>) 
+            requires constructible_by_alloc<value_type, allocator_type, range_forward_reference<Range>> { 
+                construct(alloc, to, iter_forward_like<Range>(from)); 
         };
     };
     
@@ -206,13 +232,13 @@ struct dynamic_array {
 
     // clang-format off
     template<std::ranges::sized_range OtherRange>
-        requires (nnd::is_not<dynamic_array, OtherRange> && std::constructible_from<value_type, std::ranges::range_reference_t<OtherRange>>)
+        requires (nnd::is_not<dynamic_array, OtherRange> && std::constructible_from<value_type, range_forward_reference<OtherRange>>)
     dynamic_array(OtherRange&& range_to_copy, const allocator_type& new_alloc = {}) :
         alloc{ new_alloc },
         array_begin{ allocate(alloc, std::ranges::size(range_to_copy)) }, 
         array_size{ std::ranges::size(range_to_copy) } {
 
-            initalize(bind_copy_construct(alloc), std::ranges::begin(range_to_copy));
+            initalize(bind_forward_construct<OtherRange>(alloc), std::ranges::begin(range_to_copy));
 
     }
 
@@ -554,6 +580,9 @@ using aligned_array = dynamic_array<ValueType, aligned_allocator<ValueType, alig
 namespace pmr{
 template<typename ValueType, std::align_val_t align = default_align>
 using aligned_array = dynamic_array<ValueType, std::pmr::polymorphic_allocator<ValueType>, align>;
+
+template<typename ValueType, std::align_val_t align = align_val_of<ValueType>>
+using dynamic_array = dynamic_array<ValueType, std::pmr::polymorphic_allocator<ValueType>, align>;
 }
 
 } // namespace ann

@@ -14,6 +14,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <filesystem>
 #include <ranges>
 #include <utility>
+#include <variant>
 
 #include "DataDeserialization.hpp"
 
@@ -76,6 +77,14 @@ struct Serializer{
 //template<std::endian DataEndianness = std::endian::native>
 inline constexpr Serializer serialize{};
 
+inline auto BindSerializer(std::ofstream& outFile){
+
+    return [&](const auto& dataToWrite){
+        serialize(dataToWrite, outFile);
+    };
+    
+}
+
 template<typename Serializee>
 concept SerializableClass = requires(Serializee objToSerialize, std::ofstream& outFile){
     objToSerialize.serialize(outFile);
@@ -113,17 +122,18 @@ void Serialize(const std::pair<SerializeeA, SerializeeB>& pairToSerialize, std::
     serialize(pairToSerialize.second, outStream);
 }
 
+
+template<typename... Types>
+void Serialize(const std::variant<Types...>& variant_to_serialize, std::ofstream& out_stream){
+    auto bound_serializer = BindSerializer(out_stream);
+    bound_serializer(variant_to_serialize.index());
+    std::visit(bound_serializer, variant_to_serialize);
+}
 //constexpr bool isInput = std::input_iterator<int*>;
 
 
 
-inline auto BindSerializer(std::ofstream& outFile){
 
-    return [&](const auto& dataToWrite){
-        serialize(dataToWrite, outFile);
-    };
-    
-}
 
 template<typename Serializee, typename StreamType>
 void Serializer::operator()(Serializee&& objToSerialize, StreamType&& dataStream) const{

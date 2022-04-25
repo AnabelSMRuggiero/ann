@@ -22,7 +22,7 @@ namespace ann{
 
 //Assumes data is already normalized
 template<typename VectorA, typename VectorB, typename RetType=double>
-RetType AngularMetric(const VectorA& pointA, const VectorB& pointB){
+RetType inner_product(const VectorA& pointA, const VectorB& pointB){
     using ExtentA = typename VectorA::value_type;
     using ExtentB = typename VectorB::value_type;
 
@@ -40,7 +40,7 @@ RetType AngularMetric(const VectorA& pointA, const VectorB& pointB){
 };
 
 template<size_t numPointsTo>
-void BatchAngularNorm(const ann::vector_span<const float> pointFrom,
+void batch_inner_product(const ann::vector_span<const float> pointFrom,
                         std::span<const ann::vector_span<const float>, numPointsTo> pointsTo,
                         std::span<float, numPointsTo> resultLocation) noexcept {
 

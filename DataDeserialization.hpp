@@ -11,7 +11,10 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_DATADESERIALIZATION_HPP
 #define NND_DATADESERIALIZATION_HPP
 
+#include <cstddef>
 #include <new>
+#include <optional>
+#include <stdexcept>
 #include <type_traits>
 #include <bit>
 #include <fstream>
@@ -19,6 +22,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <concepts>
 #include <functional>
 #include <memory_resource>
+#include <utility>
+#include <variant>
 
 #include "./Type.hpp"
 #include "./DelayConstruct.hpp"
@@ -169,6 +174,28 @@ std::pair<ExtracteeA, ExtracteeB> Extract(StreamType&& dataStream, ExtractTag<st
             extract<ExtracteeB, DataEndianness>(std::forward<StreamType>(dataStream))};
 }
 
+template<std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream, typename... Types>
+std::variant<Types...> Extract(StreamType&& dataStream, ExtractTag<std::variant<Types...>>){
+
+    std::size_t type_index = extract<std::size_t>(std::forward<StreamType>(dataStream));
+    if(type_index >= sizeof...(Types)){
+        throw std::runtime_error{"Attempted to extract a variant with an out of bounds index."};
+    }
+
+    using return_variant = std::variant<Types...>;
+
+    std::optional<return_variant> ret_variant;
+    auto build_variant = [&]<std::size_t idx>(std::integral_constant<std::size_t, idx>){
+        ret_variant = extract<std::variant_alternative_t<idx, return_variant>>(std::forward<StreamType>(dataStream));
+    };
+
+    auto index_fold = [&]<std::size_t... idxs>(std::index_sequence<idxs...>){
+        (build_variant(std::integral_constant<std::size_t, idxs>{}), ...);
+    };
+
+    return *ret_variant;
+}
+
 template<std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream, typename ExtracteeA, typename ExtracteeB>
 std::unordered_map<ExtracteeA, ExtracteeB> Extract(StreamType&& dataStream, ExtractTag<std::unordered_map<ExtracteeA, ExtracteeB>>){
     const size_t mapSize = Extract<size_t, DataEndianness>(std::forward<StreamType>(dataStream));
@@ -225,12 +252,18 @@ std::vector<ValueType, Allocator> Extract(StreamType&& inFile, ExtractTag<std::v
 }
 
 template<std::ranges::contiguous_range Extractee, std::endian DataEndianness = std::endian::native, typename StreamType = std::ifstream>
-    requires (!CustomExtract<Extractee, DataEndianness, StreamType> && TriviallyCopyable<std::ranges::range_value_t<Extractee>>)
+    requires (!CustomExtract<Extractee, DataEndianness, StreamType>)
 Extractee Extract(StreamType&& dataStream){
     const size_t rangeSize = Extract<size_t, DataEndianness>(std::forward<StreamType>(dataStream));
     
     std::remove_cv_t<Extractee> range(rangeSize);
-    Extract<std::ranges::range_value_t<Extractee>, DataEndianness>(std::forward<StreamType>(dataStream), range.data(), rangeSize);
+    if constexpr(TriviallyCopyable<std::ranges::range_value_t<Extractee>>){
+        Extract<std::ranges::range_value_t<Extractee>, DataEndianness>(std::forward<StreamType>(dataStream), range.data(), rangeSize);
+    } else {
+        for(auto& element : range){
+            element = extract<std::ranges::range_value_t<Extractee>, DataEndianness>(std::forward<StreamType>(dataStream));
+        }
+    }
 
         /*
         std::remove_cv_t<Extractee> range;

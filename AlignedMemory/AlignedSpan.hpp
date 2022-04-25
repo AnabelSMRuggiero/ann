@@ -203,6 +203,11 @@ struct aligned_span{
     
 };
 
+template<typename Range>
+    requires (is_aligned_contiguous_range<Range>::value)
+aligned_span(Range&& dataToView)-> aligned_span<std::ranges::range_value_t<Range>, is_aligned_contiguous_range<Range>::alignment>;
+
+
 }
 
 
