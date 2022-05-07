@@ -186,13 +186,17 @@ std::variant<Types...> Extract(StreamType&& dataStream, ExtractTag<std::variant<
 
     std::optional<return_variant> ret_variant;
     auto build_variant = [&]<std::size_t idx>(std::integral_constant<std::size_t, idx>){
-        ret_variant = extract<std::variant_alternative_t<idx, return_variant>>(std::forward<StreamType>(dataStream));
+        if(idx == type_index){
+            ret_variant = extract<std::variant_alternative_t<idx, return_variant>>(std::forward<StreamType>(dataStream));
+        }
     };
 
     auto index_fold = [&]<std::size_t... idxs>(std::index_sequence<idxs...>){
         (build_variant(std::integral_constant<std::size_t, idxs>{}), ...);
     };
 
+    index_fold(std::make_index_sequence<sizeof...(Types)>{});
+    
     return *ret_variant;
 }
 

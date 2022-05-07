@@ -11,6 +11,8 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef NND_ANGULAR_HPP
 #define NND_ANGULAR_HPP
 
+#include <cmath>
+#include <cstddef>
 #include <numeric>
 #include <execution>
 #include <type_traits>
@@ -53,7 +55,7 @@ void batch_inner_product(const ann::vector_span<const float> pointFrom,
 
     for (size_t i = 0; i<pointFrom.size(); i+=1){
         for(size_t j = 0; j<numPointsTo; j+=1){
-            accumulators[j] += pointsTo[j][i] - pointFrom[i];
+            accumulators[j] += pointsTo[j][i] * pointFrom[i];
         }
     }
 
@@ -71,9 +73,13 @@ void batch_inner_product(const ann::vector_span<const float> pointFrom,
 
         for (size_t i = 0; i<excessFrom.size(); i += 1){
             for (size_t j = 0; j<numPointsTo; j+=1){
-                resultLocation[j] +=  excessesTo[j][i] - excessFrom[i];
+                resultLocation[j] +=  excessesTo[j][i] * excessFrom[i];
             }
         }
+    }
+
+    for (std::size_t j = 0; j<numPointsTo; ++j){
+        resultLocation[j] = 1.0 - resultLocation[j];
     }
 
 

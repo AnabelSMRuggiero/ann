@@ -168,7 +168,7 @@ constexpr auto operator+(const DataVectorBase<FirstDerived>& lhsOperand, const D
 
     return VectorOperation{FMA{},
                            tuple_cat(static_cast<const RHSDerived&>(rhsOperand).operands,
-                                     std::tuple<const ThirdDerived&>{static_cast<const FirstDerived&>(lhsOperand)})
+                                     std::tuple<const FirstDerived&>{static_cast<const FirstDerived&>(lhsOperand)})
                           };
 }
 
