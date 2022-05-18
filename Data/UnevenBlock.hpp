@@ -125,7 +125,7 @@ struct UnevenBlock{
     using iterator = UnevenBlockIterator<ElementType>;
     using const_iterator = UnevenBlockIterator<const ElementType>;
     using reference = std::span<ElementType>;
-    using const_reference = const std::span<const ElementType>;
+    using const_reference = std::span<const ElementType>;
 
 
     ann::aligned_array<std::byte, static_cast<std::align_val_t>(std::max(alignof(size_t), alignof(ElementType)))> dataStorage;

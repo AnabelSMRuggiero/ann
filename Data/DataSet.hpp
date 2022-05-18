@@ -24,6 +24,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 
 #include "../AlignedMemory/AlignedAllocator.hpp"
 #include "DataIterator.hpp"
+#include "../Metrics/SpaceMetrics.hpp"
 
 namespace nnd{
 
@@ -234,8 +235,8 @@ struct DataIterator{
 
 template<typename DataEntry>
 void NormalizeDataSet(DataSet<DataEntry>& dataSet){
-    for (auto& entry: dataSet){
-        Normalize(entry);
+    for (auto&& entry: dataSet){
+        ann::Normalize(entry);
     }
 };
 

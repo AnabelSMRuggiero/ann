@@ -38,7 +38,7 @@ RetType inner_product(const VectorA& pointA, const VectorB& pointB){
                                     RetType(0),
                                     std::plus<RetType>(),
                                     transformFunc);
-    return static_cast<RetType>(1.0) - accum;
+    return std::acos(accum)/std::numbers::pi_v<RetType>;
 };
 
 template<size_t numPointsTo>
@@ -79,7 +79,7 @@ void batch_inner_product(const ann::vector_span<const float> pointFrom,
     }
 
     for (std::size_t j = 0; j<numPointsTo; ++j){
-        resultLocation[j] = 1.0 - resultLocation[j];
+        resultLocation[j] = std::acos(resultLocation[j])/std::numbers::pi_v<float>;
     }
 
 
