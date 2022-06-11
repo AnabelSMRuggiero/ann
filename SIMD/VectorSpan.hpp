@@ -73,7 +73,7 @@ struct vector_span_iterator {
 
     bool operator==(vector_span_iterator other) { return currentElement == other.currentElement; }
 
-    reference operator*() { return reference{ MakeAlignedPtr(currentElement, *this) }; }
+    reference operator*() { return reference{ nnd::MakeAlignedPtr(currentElement, *this) }; }
 
     reference operator[](size_t i) { return *(*this + i); }
 
@@ -129,7 +129,9 @@ struct vector_span {
     vector_span(nnd::AlignedSpan<ElementType, alignment> &dataToView) requires(!std::is_const_v<ElementType>)
         : data(dataToView.begin()), fullExtent(dataToView.size()){};
 
-    vector_span(const nnd::AlignedSpan<ElementType, alignment> &dataToView) requires std::is_const_v<ElementType>
+    template<typename OtherElement>
+        requires (std::same_as<std::remove_const_t<OtherElement>, std::remove_const_t<ElementType>>)
+    vector_span(const nnd::AlignedSpan<OtherElement, alignment> &dataToView) requires std::is_const_v<ElementType>
         : data(dataToView.begin()), fullExtent(dataToView.size()){};
 
     vector_span(
@@ -165,6 +167,9 @@ struct vector_span {
         return nnd::AlignedSpan<const ElementType, alignment>{ nnd::MakeAlignedPtr(data, *this), fullExtent };
     }
 };
+
+template<typename ElementType, std::size_t alignment>
+vector_span(nnd::AlignedSpan<ElementType, alignment>) -> vector_span<ElementType, defaultInstructionSet, alignment>;
 
 } // namespace ann
 

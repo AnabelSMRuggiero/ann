@@ -14,6 +14,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <concepts>
 #include <tuple>
 #include <functional>
+#include <type_traits>
 #include <utility>
 
 #include "SIMDInstructionSet.hpp"
@@ -89,15 +90,35 @@ struct VectorReference : DataVectorBase<VectorReference<DataType, instructions, 
     DataType* dataPtr;
 };
 
+template<typename Reference>
+using dequalify_rvalue_reference_t = std::conditional_t<std::is_rvalue_reference_v<Reference>, std::remove_cvref_t<Reference>, Reference>;
+
+template<typename VectorType>
+struct is_data_vector : std::false_type{};
+
+template<typename DataType, InstructionSet instructions>
+struct is_data_vector<DataVector<DataType, instructions>> : std::true_type{};
+
+template<typename VectorType>
+using is_data_vector_t = typename is_data_vector<VectorType>::type;
+
+template<typename VectorType>
+constexpr bool is_data_vector_v = is_data_vector<VectorType>::value;
+
+
+template<typename VectorType>
+using vector_decay_t = std::conditional_t<is_data_vector_v<VectorType>, dequalify_rvalue_reference_t<VectorType>,
+                                                                        std::remove_cvref_t<VectorType>>;
+
 template<typename Op, typename... Operands>
     requires Operation<Op, sizeof...(Operands)>
 struct VectorOperation : DataVectorBase<VectorOperation<Op, Operands...>>{
     
-    std::tuple<const Operands&...> operands;
+    std::tuple<Operands...> operands;
     
     constexpr VectorOperation(Op, const Operands&... operands): operands{operands...} {}
 
-    constexpr VectorOperation(Op, std::tuple<const Operands&...> operands): operands{std::move(operands)} {}
+    constexpr VectorOperation(Op, std::tuple<Operands...> operands): operands{std::move(operands)} {}
 
 };
 
@@ -130,14 +151,14 @@ template<typename Op, typename... Operands>
 //VectorOperation test{Multiply{}, DataVector<float, InstructionSet::avx>{}, DataVector<float, InstructionSet::avx>{}};
 
 template<typename Operation, typename LHSDerived, typename RHSDerived>
-constexpr auto MakeOperation(Operation, const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] constexpr auto MakeOperation(Operation, const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return VectorOperation{Operation{}, static_cast<const LHSDerived&>(lhsOperand), static_cast<const RHSDerived&>(rhsOperand)};
 
 };
 
 template<typename Derived>
-constexpr auto operator-(const DataVectorBase<Derived>& operand){
+[[gnu::flatten]] constexpr auto operator-(const DataVectorBase<Derived>& operand){
 
     return VectorOperation{Negate{}, static_cast<const Derived&>(operand)};
 
@@ -145,35 +166,47 @@ constexpr auto operator-(const DataVectorBase<Derived>& operand){
 
 
 template<typename LHSDerived, typename RHSDerived>
-constexpr auto operator+(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator+(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return MakeOperation(Add{}, lhsOperand, rhsOperand);
 
 }
 
 template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
-constexpr auto operator+(const DataVectorBase<VectorOperation<Multiply, FirstDerived, SecondDerived>>& lhsOperand, const DataVectorBase<ThirdDerived>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator+(const DataVectorBase<VectorOperation<Multiply, FirstDerived, SecondDerived>>& lhsOperand, const DataVectorBase<ThirdDerived>& rhsOperand){
     using LHSDerived = VectorOperation<Multiply, FirstDerived, SecondDerived>;
 
     return VectorOperation{FMA{},
                            tuple_cat(static_cast<const LHSDerived&>(lhsOperand).operands,
-                                     std::tuple<const ThirdDerived&>{static_cast<const ThirdDerived&>(rhsOperand)})
+                                     std::tuple<ThirdDerived>{static_cast<const ThirdDerived&>(rhsOperand)})
                           };
 }
 
 // Clang doesn't try reversing operands to see if the fma contraction version is more specialized
 template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
-constexpr auto operator+(const DataVectorBase<FirstDerived>& lhsOperand, const DataVectorBase<VectorOperation<Multiply, SecondDerived, ThirdDerived>>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator+(const DataVectorBase<FirstDerived>& lhsOperand, const DataVectorBase<VectorOperation<Multiply, SecondDerived, ThirdDerived>>& rhsOperand){
     using RHSDerived = VectorOperation<Multiply, SecondDerived, ThirdDerived>;
 
     return VectorOperation{FMA{},
                            tuple_cat(static_cast<const RHSDerived&>(rhsOperand).operands,
-                                     std::tuple<const FirstDerived&>{static_cast<const FirstDerived&>(lhsOperand)})
+                                     std::tuple<FirstDerived>{static_cast<const FirstDerived&>(lhsOperand)})
+                          };
+}
+
+template<typename FirstDerived, typename SecondDerived, typename ThirdDerived, typename FourthDerived>
+[[gnu::flatten]] constexpr auto operator+(const DataVectorBase<VectorOperation<Multiply, FirstDerived, SecondDerived>>& lhsOperand, const DataVectorBase<VectorOperation<Multiply, ThirdDerived, FourthDerived>>& rhsOperand){
+    using RHSDerived = VectorOperation<Multiply, ThirdDerived, FourthDerived>;
+
+    return VectorOperation{FMA{},
+                           tuple_cat(static_cast<const RHSDerived&>(rhsOperand).operands,
+                                     std::tuple<VectorOperation<Multiply, FirstDerived, SecondDerived>>{
+                                         static_cast<const VectorOperation<Multiply, FirstDerived, SecondDerived>&>(lhsOperand)
+                                     })
                           };
 }
 
 template<typename LHSDerived, typename RHSDerived>
-constexpr auto operator-(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator-(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return MakeOperation(Subtract{}, lhsOperand, rhsOperand);
 
@@ -181,7 +214,7 @@ constexpr auto operator-(const DataVectorBase<LHSDerived>& lhsOperand, const Dat
 
 
 template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
-constexpr auto operator-(const DataVectorBase<VectorOperation<Multiply, FirstDerived, SecondDerived>>& lhsOperand, const DataVectorBase<ThirdDerived>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator-(const DataVectorBase<VectorOperation<Multiply, FirstDerived, SecondDerived>>& lhsOperand, const DataVectorBase<ThirdDerived>& rhsOperand){
     using LHSDerived = VectorOperation<Multiply, FirstDerived, SecondDerived>;
 
     return VectorOperation{FMS{},
@@ -192,7 +225,7 @@ constexpr auto operator-(const DataVectorBase<VectorOperation<Multiply, FirstDer
 
 // Clang doesn't try reversing operands to see if the fms contraction version is more specialized
 template<typename FirstDerived, typename SecondDerived, typename ThirdDerived>
-constexpr auto operator-(const DataVectorBase<FirstDerived>& lhsOperand, const DataVectorBase<VectorOperation<Multiply, SecondDerived, ThirdDerived>>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator-(const DataVectorBase<FirstDerived>& lhsOperand, const DataVectorBase<VectorOperation<Multiply, SecondDerived, ThirdDerived>>& rhsOperand){
     using RHSDerived = VectorOperation<Multiply, SecondDerived, ThirdDerived>;
 
     return VectorOperation{FNMA{},
@@ -202,14 +235,14 @@ constexpr auto operator-(const DataVectorBase<FirstDerived>& lhsOperand, const D
 }
 
 template<typename LHSDerived, typename RHSDerived>
-constexpr auto operator*(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator*(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return MakeOperation(Multiply{}, lhsOperand, rhsOperand);
 
 }
 
 template<typename LHSDerived, typename RHSDerived>
-constexpr auto operator/(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
+[[gnu::flatten]] constexpr auto operator/(const DataVectorBase<LHSDerived>& lhsOperand, const DataVectorBase<RHSDerived>& rhsOperand){
 
     return MakeOperation(Divide{}, lhsOperand, rhsOperand);
 
