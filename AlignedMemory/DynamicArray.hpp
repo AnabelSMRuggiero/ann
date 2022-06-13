@@ -538,7 +538,20 @@ struct dynamic_array {
             return *this;
         }
 
-        // swap
+        private:
+        static constexpr bool noexcept_alloc_swap = noexcept( std::swap(std::declval<allocator_type>(),std::declval<allocator_type>()) );
+        public:
+
+        constexpr void swap(dynamic_array& other) noexcept(noexcept_alloc_swap) requires(alloc_traits::propagate_on_container_swap::value){
+            std::ranges::swap(array_size, other.array_size);
+            std::ranges::swap(array_begin, other.array_begin);
+            std::ranges::swap(alloc, other.alloc);
+        }
+
+        constexpr void swap(dynamic_array& other) noexcept requires(!alloc_traits::propagate_on_container_swap::value){
+            std::ranges::swap(array_size, other.array_size);
+            std::ranges::swap(array_begin, other.array_begin);
+        }
 
         constexpr size_type size() const { return array_size; }
 
