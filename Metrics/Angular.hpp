@@ -16,6 +16,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include <functional>
 #include <numeric>
 #include <execution>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -29,6 +30,7 @@ template<typename LHSDistance, typename RHSDistance, typename RetType=std::commo
 RetType inner_product(ann::vector_span<const LHSDistance> point_lhs, ann::vector_span<const RHSDistance> point_rhs){
 
     return RetType(1.0) - std::clamp(vector_transform_reduce(point_lhs, point_rhs, std::multiplies<>{}, std::plus<>{}), RetType(-1.0), RetType(1.0));
+
 };
 
 
@@ -83,9 +85,6 @@ void batch_inner_product(ann::vector_span<const float> point_from,
         //resultLocation[j] = std::acos(std::clamp(resultLocation[j], -1.0f, 1.0f))/std::numbers::pi_v<float>;
         resultLocation[j] = 1.0f - resultLocation[j];
     }
-
-
-
 
 }
 
