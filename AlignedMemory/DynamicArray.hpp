@@ -85,8 +85,6 @@ concept call_aligned_allocate = requires(Allocator&& alloc) {
 
 
 
-
-
 // TODO: consider lifting the guarantee that other owns nothing after move assign; that allows for branchless moves.
 //       Add in a check for equal array size for copy assign of nothrow copy assignable types.
 
@@ -340,10 +338,17 @@ struct dynamic_array {
             !(alloc_always_equal || alloc_prop_moveassign) && std::is_nothrow_move_constructible_v<value_type>;
 
         void no_throw_move(dynamic_array& other) noexcept {
+            /*
             std::ranges::destroy(*this);
             deallocate(alloc, array_begin, array_size);
             array_begin = std::exchange(other.array_begin, nullptr);
             array_size = std::exchange(other.array_size, 0);
+            */
+            // This should be able to handle self-assignment
+            auto discarded_pointer = three_way_exchange(array_begin, other.array_begin, nullptr);
+            auto discarded_size = three_way_exchange(array_size, other.array_size, 0);
+            std::ranges::destroy(discarded_pointer, discarded_pointer + discarded_size);
+            deallocate(alloc, discarded_pointer, discarded_size);
         }
         //TODO: fix this to put constructions through alloc_traits
         void element_copy(const dynamic_array& other, pointer new_array, std::invocable<> auto&& cleanup) noexcept requires
@@ -434,7 +439,7 @@ struct dynamic_array {
 
         dynamic_array& operator=(dynamic_array&& other) noexcept requires alloc_always_equal {
 
-            [[unlikely]] if (this == &other) { return *this; }
+            //[[unlikely]] if (this == &other) { return *this; }
 
             no_throw_move(other);
             return *this;
@@ -442,7 +447,7 @@ struct dynamic_array {
 
         dynamic_array& operator=(dynamic_array&& other) noexcept requires alloc_prop_moveassign {
 
-            [[unlikely]] if (this == &other) { return *this; }
+            //[[unlikely]] if (this == &other) { return *this; }
 
             no_throw_move(other);
             alloc = other.alloc;

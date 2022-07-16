@@ -50,6 +50,10 @@ decltype(auto) iter_forward_like(Iter&& iter){
     }
 }
 
+template<typename Type, std::convertible_to<Type> Value>
+decltype(auto) three_way_exchange(Type& first, Type& second, Value&& assign_to_second){
+    return std::exchange(first, std::exchange(second, std::forward<Value>(assign_to_second)));
+}
 
 }
 
