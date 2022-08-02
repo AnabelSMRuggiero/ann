@@ -64,6 +64,12 @@ struct aligned_allocator {
 
     constexpr aligned_allocator& operator=(const aligned_allocator&) noexcept = default;
 
+    constexpr aligned_allocator(aligned_allocator&&) noexcept = default;
+    template<typename Other>
+    constexpr aligned_allocator(aligned_allocator<Other, align>&&) noexcept {}
+
+    constexpr aligned_allocator& operator=(aligned_allocator&&) noexcept = default;
+
     ~aligned_allocator() = default;
 
     [[nodiscard]] Type* allocate(std::size_t numberOfElements, std::align_val_t allocAlign) {

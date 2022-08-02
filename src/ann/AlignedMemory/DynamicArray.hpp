@@ -11,6 +11,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #ifndef ANN_DYNAMICARRAY_HPP
 #define ANN_DYNAMICARRAY_HPP
 
+#include <concepts>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -23,6 +24,7 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #include "../TemplateManipulation.hpp"
 #include "../Type.hpp"
 #include "AlignedAllocator.hpp"
+#include "ContainerHelpers.hpp"
 
 namespace ann {
 
@@ -510,7 +512,7 @@ struct dynamic_array {
         }
 
         private:
-        static constexpr bool noexcept_alloc_swap = noexcept( std::swap(std::declval<allocator_type>(),std::declval<allocator_type>()) );
+        static constexpr bool noexcept_alloc_swap = std::is_nothrow_swappable_v<allocator_type>;
         public:
 
         constexpr void swap(dynamic_array& other) noexcept(noexcept_alloc_swap) requires(alloc_traits::propagate_on_container_swap::value){
