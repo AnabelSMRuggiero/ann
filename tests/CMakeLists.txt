@@ -8,13 +8,15 @@
 
 add_executable(ann_test)
 
+target_link_libraries(
+    ann_test
+    PRIVATE Catch2::Catch2WithMain
+    PRIVATE anns_numerical_nonsense
+)
+
 target_sources(
     ann_test
     PRIVATE DualVectorTest.cpp
 )
 
-target_link_libraries(
-    ann_test
-    PRIVATE Catch2::Catch2WithMain
-    INTERFACE anns_numerical_nonsense
-)
+target_compile_features(ann_test PRIVATE cxx_std_20)

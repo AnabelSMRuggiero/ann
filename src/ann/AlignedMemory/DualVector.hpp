@@ -8,9 +8,13 @@ Please refer to the project repo for any updates regarding liscensing.
 https://github.com/AnabelSMRuggiero/NNDescent.cpp
 */
 
+#ifndef ANN_DUALVECTOR_HPP
+#define ANN_DUALVECTOR_HPP
+
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -59,8 +63,8 @@ struct bind_allocator{
     };
 
     inline static constexpr auto bind_construct = []<typename... Types>(allocator_type& alloc, Types&&... args) noexcept{
-        return [&] <typename Pointer> (Pointer ptr) noexcept(noexcept_construct<Pointer, Types...>){
-            alloc_traits::construct(alloc, ptr, std::forward<Types>(args)...);
+        return [&] <typename Pointer, typename... InnerTypes> (Pointer ptr, InnerTypes&&... inner_args) noexcept(noexcept_construct<Pointer, Types...>){
+            alloc_traits::construct(alloc, ptr, std::forward<Types>(args)..., std::forward<InnerTypes>(inner_args)...);
         };
     };
 
@@ -72,14 +76,14 @@ struct bind_allocator{
     
     
     inline static constexpr auto bind_copy_construct = [](allocator_type & alloc) noexcept -> auto {
-        return [&alloc]<typename Pointer, typename IterOther>(Pointer to, IterOther&& from) noexcept(noexcept_construct<std::iter_reference_t<IterOther>>)
+        return [&alloc]<typename Pointer, typename IterOther>(Pointer to, IterOther&& from) noexcept(noexcept_construct<Pointer, std::iter_reference_t<IterOther>>)
             requires constructible_by_alloc<element<Pointer>, allocator_type, const element<Pointer>&> { 
                 construct(alloc, to, *from); 
         };
     };
 
     inline static constexpr auto bind_move_construct = [](allocator_type & alloc) noexcept -> auto {
-        return [&alloc]<typename Pointer, typename IterOther>(Pointer to, IterOther&& from) noexcept(noexcept_construct<std::iter_rvalue_reference_t<IterOther>>) 
+        return [&alloc]<typename Pointer, typename IterOther>(Pointer to, IterOther&& from) noexcept(noexcept_construct<Pointer, std::iter_rvalue_reference_t<IterOther>>) 
             requires constructible_by_alloc<element<Pointer>, allocator_type, std::iter_rvalue_reference_t<IterOther>> { 
                 construct(alloc, to, std::ranges::iter_move(from)); 
         };
@@ -88,7 +92,7 @@ struct bind_allocator{
     template<typename Range>
     inline static constexpr auto bind_forward_construct = [](allocator_type & alloc) noexcept -> auto {
         return [&alloc] <typename Pointer> (Pointer to, auto&& from)
-                    noexcept(noexcept_construct<range_forward_reference<Range>>) 
+                    noexcept(noexcept_construct<Pointer, range_forward_reference<Range>>) 
                     requires constructible_by_alloc<element<Pointer>, allocator_type, range_forward_reference<Range>> { 
             construct(alloc, to, iter_forward_like<Range>(from)); 
         };
@@ -134,6 +138,8 @@ auto uninitialized_alloc_copy(InIter in_iter, InSent in_sent, OutPtr out_ptr, Al
 template<std::input_iterator InIter, std::sentinel_for<InIter> InSent, typename OutPtr, typename Alloc>
     requires std::is_trivially_copyable_v<std::iter_value_t<OutPtr>>
 auto uninitialized_alloc_copy(InIter in_iter, InSent in_sent, OutPtr out_ptr, Alloc& allocator){
+    *out_ptr = *in_iter;
+    static_assert(std::indirectly_writable<OutPtr, std::iter_reference_t<InIter>>);
     std::ranges::copy(in_iter, in_sent, out_ptr);
 };
 
@@ -170,12 +176,12 @@ auto uninitialized_alloc_construct(InIter begin, InSent end, Alloc& allocator){
         }
         throw;
     }
-    return std::ranges::in_out_result<InIter, OutPtr>{in_iter, out_ptr};
+    return begin;
 };
 
 template<typename Alloc, typename Value>
 decltype(auto) move_if_safe(Value& value){
-    if constexpr (detect_noexcept_construct<std::remove_cvref_t<Value>, allocator_type, Value>()){
+    if constexpr (detect_noexcept_construct<std::remove_cvref_t<Value>, Alloc, Value>()){
         return std::forward<Value>(value);
     } else {
         return static_cast<std::remove_reference_t<Value>&>(value);
@@ -190,6 +196,235 @@ auto alloc_destroy(Pointer begin, Pointer end, Alloc& alloc){
     }
 }
 
+
+template<typename Type>
+struct is_pair_imp : std::false_type{};
+
+template<typename FirstType, typename SecondType>
+struct is_pair_imp<std::pair<FirstType, SecondType>> : std::true_type{};
+
+template<typename Type>
+concept is_pair = is_pair_imp<std::remove_cvref_t<Type>>::value;
+
+template<is_pair PairRef>
+    requires std::is_reference_v<PairRef>
+struct construct_wrapper{
+    construct_wrapper(PairRef pair_in): pair{pair_in} {}
+    PairRef pair;
+}; 
+template<typename Pair>
+construct_wrapper(Pair&&)->construct_wrapper<Pair&&>;
+
+template<typename PairRef>
+    requires std::is_reference_v<PairRef>
+struct assign_wrapper{
+    assign_wrapper(PairRef pair_in): pair{pair_in}{}
+    PairRef pair;
+};
+template<typename Pair>
+assign_wrapper(Pair&&)->assign_wrapper<Pair&&>;
+
+template<typename FirstType, typename SecondType>
+    requires std::is_reference_v<FirstType> && std::is_reference_v<SecondType>
+struct dual_vector_reference{
+    FirstType first;
+    SecondType second;
+
+    private:
+    using first_value = std::remove_reference_t<FirstType>;
+    using second_value = std::remove_reference_t<SecondType>;
+
+    static constexpr bool is_non_const = !std::is_const_v<first_value> &&
+                                         !std::is_const_v<second_value>;
+    public:
+
+    constexpr dual_vector_reference(FirstType&& first_ref, SecondType&& second_ref):
+        first{std::forward<FirstType>(first_ref)},
+        second{std::forward<SecondType>(second_ref)}{}
+
+    constexpr dual_vector_reference(const dual_vector_reference&) = default;
+    
+    constexpr dual_vector_reference(const dual_vector_reference<std::remove_cvref_t<FirstType>&, std::remove_cvref_t<SecondType>&>& other) 
+        requires(!is_non_const):
+        first{other.first},
+        second{other.second} {}
+
+    constexpr dual_vector_reference(const dual_vector_reference<std::remove_cvref_t<FirstType>&&, std::remove_cvref_t<SecondType>&&>& other) 
+        requires(!is_non_const):
+        first{other.first},
+        second{other.second} {}
+
+    template<
+        std::convertible_to<first_value> FirstOther,
+        std::convertible_to<second_value> SecondOther
+    >
+    constexpr dual_vector_reference(std::pair<FirstOther, SecondOther>&& other_pair):
+        first{other_pair.first},
+        second{other_pair.second}{}
+
+    template<
+        std::convertible_to<first_value> FirstOther,
+        std::convertible_to<second_value> SecondOther
+    >
+    constexpr dual_vector_reference(const std::pair<FirstOther, SecondOther>& other_pair) requires(!is_non_const):
+        first{other_pair.first},
+        second{other_pair.second}{}
+
+    template<
+        std::convertible_to<first_value> FirstOther,
+        std::convertible_to<second_value> SecondOther
+    >
+    constexpr dual_vector_reference(std::pair<FirstOther, SecondOther>& other_pair):
+        first{other_pair.first},
+        second{other_pair.second}{}
+    
+    constexpr dual_vector_reference& operator=(assign_wrapper<const dual_vector_reference&> other_reference) {
+        first = std::forward<FirstType>(other_reference.pair.first);
+        second = std::forward<SecondType>(other_reference.pair.second);
+        return *this;
+    }
+
+    constexpr const dual_vector_reference& operator=(assign_wrapper<const dual_vector_reference&> other_reference) const {
+        first = std::forward<FirstType>(other_reference.pair.first);
+        second = std::forward<SecondType>(other_reference.pair.second);
+        return *this;
+    }
+
+    template<
+        std::convertible_to<first_value> FirstOther,
+        std::convertible_to<second_value> SecondOther
+    >
+    constexpr const dual_vector_reference& operator=(assign_wrapper<const dual_vector_reference<FirstOther&&, SecondOther&&>&> other_reference) const {
+        first = std::forward<FirstOther>(other_reference.pair.first);
+        second = std::forward<SecondOther>(other_reference.pair.second);
+        return *this;
+    }
+
+    
+    /*
+    template<is_pair Pair>
+    constexpr dual_vector_reference& operator=(assign_wrapper<Pair&&> wrapped){
+        do_pair_assign(std::forward<Pair>(wrapped.pair));
+        return *this;
+    }
+    */
+    
+   
+    template<
+        std::convertible_to<first_value> FirstOther,
+        std::convertible_to<second_value> SecondOther
+    >
+    constexpr const dual_vector_reference& operator=(std::pair<FirstOther, SecondOther>&& other_pair) const {
+        first = std::forward<FirstOther>(other_pair.first);
+        second = std::forward<SecondOther>(other_pair.second);
+        return *this;
+    }
+    
+    template<
+        typename FirstOther,
+        typename SecondOther
+    >
+        requires(std::assignable_from<FirstType, FirstOther> && std::assignable_from<SecondType, SecondOther>)
+    constexpr const dual_vector_reference& operator=(const std::pair<FirstOther, SecondOther>& other_pair) const {
+        first = other_pair.first;
+        second = other_pair.second;
+        return *this;
+    }
+    
+    public:
+
+    operator std::pair<first_value, second_value>() const {
+        return {std::forward<FirstType>(first), std::forward<SecondType>(second)};
+    }
+
+};
+
+
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::three_way_comparable_with<LHSFirst> RHSFirst,
+    std::three_way_comparable_with<LHSFirst> RHSSecond
+>
+auto operator<=>(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const std::pair<RHSFirst, RHSSecond>& rhs)
+    -> std::common_type_t<decltype(lhs.first <=> rhs.first), decltype(lhs.second <=> rhs.second)> {
+    
+    return (lhs.first <=> rhs.first != 0) ? lhs.first <=> rhs.first : lhs.second <=> rhs.second;
+}
+
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::three_way_comparable_with<LHSFirst> RHSFirst,
+    std::three_way_comparable_with<LHSFirst> RHSSecond
+>
+auto operator<=>(const std::pair<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs)
+    -> std::common_type_t<decltype(lhs.first <=> rhs.first), decltype(lhs.second <=> rhs.second)> {
+    
+    return (lhs.first <=> rhs.first != 0) ? lhs.first <=> rhs.first : lhs.second <=> rhs.second;
+}
+
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::three_way_comparable_with<LHSFirst> RHSFirst,
+    std::three_way_comparable_with<LHSFirst> RHSSecond
+>
+auto operator<=>(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs)
+    -> std::common_type_t<decltype(lhs.first <=> rhs.first), decltype(lhs.second <=> rhs.second)> {
+    
+    return (lhs.first <=> rhs.first != 0) ? lhs.first <=> rhs.first : lhs.second <=> rhs.second;
+}
+
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::equality_comparable_with<LHSFirst> RHSFirst,
+    std::equality_comparable_with<LHSFirst> RHSSecond
+>
+bool operator==(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const std::pair<RHSFirst, RHSSecond>& rhs){
+    
+    return lhs.first == rhs.first && lhs.second == rhs.second;
+}
+
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::equality_comparable_with<LHSFirst> RHSFirst,
+    std::equality_comparable_with<LHSFirst> RHSSecond
+>
+bool operator==(const std::pair<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs){
+    
+    return lhs.first == rhs.first && lhs.second == rhs.second;
+}
+
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::equality_comparable_with<LHSFirst> RHSFirst,
+    std::equality_comparable_with<LHSFirst> RHSSecond
+>
+bool operator==(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs){
+    
+    return lhs.first == rhs.first && lhs.second == rhs.second;
+}
+
+static_assert(std::equality_comparable<dual_vector_reference<float&, double&>>);
+
+template<typename Type>
+using preserve_rref = std::conditional_t<std::is_rvalue_reference_v<Type>, Type&&, Type&>;
+
+template<typename FirstType, typename SecondType>
+dual_vector_reference(std::pair<FirstType, SecondType>&) -> dual_vector_reference<preserve_rref<FirstType>, preserve_rref<SecondType&>>;
+
+template<typename FirstType, typename SecondType>
+dual_vector_reference(const std::pair<FirstType, SecondType>&) -> dual_vector_reference<const FirstType&, const SecondType&>;
+
+template<typename FirstType, typename SecondType>
+dual_vector_reference(std::pair<FirstType, SecondType>&&) -> dual_vector_reference<FirstType&&, SecondType&&>;
+
+
+
 template<typename FirstPointer, typename SecondPointer>
 struct dual_vector_iterator{
     private:
@@ -203,19 +438,39 @@ struct dual_vector_iterator{
     using first = element<first_pointer>;
     using second = element<second_pointer>;
 
+
+    static constexpr bool is_const_iter = std::is_const_v<first> && std::is_const_v<second>;
+
+    using nonconst_first_pointer = typename std::pointer_traits<FirstPointer>::template rebind<std::remove_const_t<first>>;
+    using nonconst_second_pointer = typename std::pointer_traits<SecondPointer>::template rebind<std::remove_const_t<second>>;
     
+    using nonconst_iter = dual_vector_iterator<nonconst_first_pointer, nonconst_second_pointer>;
+
+    template<typename Independent, typename Dependent>
+    using make_dependent = std::conditional_t<true, Independent, Dependent>;
 
     public:
     
     using value_type = std::pair<first, second>;
     using difference_type = std::ptrdiff_t;
-    using reference = std::pair<first&, second&>;
-    using const_reference = std::pair<const first&, const second&>;
+    using reference = dual_vector_reference<first&, second&>;
+    using const_reference = dual_vector_reference<const first&, const second&>;
 
     first_pointer first_ptr;
     second_pointer second_ptr;
 
     public:
+
+    constexpr dual_vector_iterator() = default;
+
+    constexpr dual_vector_iterator(first_pointer first, second_pointer second):
+        first_ptr{first},
+        second_ptr{second}{}
+
+    template<std::same_as<nonconst_iter> OtherIter, typename = std::enable_if_t<is_const_iter, make_dependent<nonconst_iter, OtherIter>>>
+    constexpr dual_vector_iterator(OtherIter other):
+        first_ptr{other.first_ptr},
+        second_ptr{other.second_ptr} {}
 
     constexpr dual_vector_iterator& operator++(){
         ++first_ptr;
@@ -293,13 +548,22 @@ dual_vector_iterator<FirstPointer, SecondPointer> operator-(std::ptrdiff_t inc, 
     return iter - inc;
 }
 
+template<typename FirstPointer, typename SecondPointer>
+auto iter_move(const dual_vector_iterator<FirstPointer, SecondPointer>& iter){
+    using first_element = std::pointer_traits<FirstPointer>::element_type;
+    using second_element = std::pointer_traits<SecondPointer>::element_type;
+    using first_reference = std::conditional_t<std::is_const_v<first_element>, const first_element&, first_element&&>;
+    using second_reference = std::conditional_t<std::is_const_v<second_element>, const second_element&, second_element&&>;
 
+    auto lref = *iter;
+    return dual_vector_reference<first_reference, second_reference>(std::move(lref.first), std::move(lref.second));
+}
 
 template<typename FirstType, typename SecondType, typename Allocator = std::allocator<std::pair<FirstType, SecondType>>>
 struct dual_vector{
     using value_type = std::pair<FirstType, SecondType>;
-    using reference = std::pair<FirstType&, SecondType&>;
-    using const_reference =  std::pair<const FirstType&, const SecondType&>;
+    using reference = dual_vector_reference<FirstType&, SecondType&>;
+    using const_reference =  dual_vector_reference<const FirstType&, const SecondType&>;
     using allocator_type = Allocator;
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
@@ -324,7 +588,7 @@ struct dual_vector{
     using pointer_second = typename alloc_traits_second::pointer;
     using const_pointer_second = typename alloc_traits_second::const_pointer;
 
-    using bind = bind_allocator<alloc>;
+    using bind = bind_allocator<alloc_first>;
 
     public:
     using iterator = std::conditional_t<layout::reversed, dual_vector_iterator<pointer_second, pointer_first>,
@@ -340,7 +604,7 @@ struct dual_vector{
     static constexpr auto adjust_alloc_size = [](std::size_t size){ return size * sum_of_sizes/sizeof(typename layout::first) + 1; };
 
     static constexpr auto allocate = [](alloc_first& allocator, std::size_t size)->pointer_first{
-        std::size_t array_elements = adjust_alloc_size(size);
+        std::size_t array_elements = dual_vector::adjust_alloc_size(size);
         auto array_ptr = alloc_traits_first::allocate(allocator, array_elements);
         // In the context of language rules, we really need an array of bytes, but the allocator for the first type
         // returns a pointer to an array of first. We need to use the allocator for the first type to get alignment
@@ -351,7 +615,7 @@ struct dual_vector{
     };
 
     static constexpr auto deallocate = [](alloc_first& allocator, pointer_first buffer, std::size_t size)->void{
-        alloc_traits_first::deallocate(allocator, buffer, adjust_alloc_size(size));
+        alloc_traits_first::deallocate(allocator, buffer, dual_vector::adjust_alloc_size(size));
     };
 
     template<typename Value, typename... Types>
@@ -387,6 +651,14 @@ struct dual_vector{
             }
     }
 
+    constexpr dual_vector(std::initializer_list<value_type> init, const allocator_type& alloc = {}):
+        allocator{alloc},
+        buffer{allocate(allocator, init.size())},
+        buffer_capacity{init.size()},
+        array_size{init.size()}{
+            uninitialized_alloc_copy(init.begin(), init.end(), begin(), allocator);
+    } 
+
     constexpr dual_vector(const dual_vector& other):
         allocator{alloc_traits_first::select_on_container_copy_construction(other.allocator)},
         buffer{allocate(allocator, other.array_size)},
@@ -403,7 +675,7 @@ struct dual_vector{
     constexpr ~dual_vector(){
         if(buffer != nullptr){
             destroy_elements();
-            deallocate(allocator, buffer, size);
+            deallocate(allocator, buffer, buffer_capacity);
         }
     }
 
@@ -540,7 +812,7 @@ struct dual_vector{
             !(alloc_always_equal || alloc_prop_moveassign) && std::is_nothrow_move_constructible_v<value_type>;
 
     static constexpr bool copy_over = std::is_nothrow_copy_constructible_v<first> && std::is_nothrow_copy_constructible_v<second>
-                                    && std::is_nothrow_copy_assignable_v<first> && std::is_nothrow_assignable_v<second>;
+                                    && std::is_nothrow_copy_assignable_v<first> && std::is_nothrow_copy_assignable_v<second>;
     template<typename Type>
     static constexpr bool element_no_throw_move = std::uses_allocator_v<Type, allocator_type> ? std::is_nothrow_constructible_v<Type, Type&&, const allocator_type&>
                                                                                               : std::is_nothrow_move_constructible_v<Type> 
@@ -657,7 +929,7 @@ struct dual_vector{
         }
         catch(...){
             alloc_destroy(new_buffer, constructed_first, allocator);
-            alloc_destroy(to_second_begin(new_buffer, new_capacity), constructed_second, allocator);
+            alloc_destroy(to_begin_second(new_buffer, new_capacity), constructed_second, allocator);
             deallocate(allocator, new_buffer, new_capacity);
             throw;
         }
@@ -686,7 +958,7 @@ struct dual_vector{
                 throw;
             }
         }
-        auto forward_construct = bind::bind_foward_construct(allocator);
+        auto forward_construct = bind::bind_construct(allocator);
         if constexpr (move_insert<first, FirstArg>){
             forward_construct(first_location, std::forward<FirstArg>(first_arg));
         }
@@ -718,7 +990,7 @@ struct dual_vector{
                 constructed_first = std::uninitialized_move(begin_first(), end_first(), new_buffer);
             }
             if constexpr (!copy_relocate<second>){
-                constructed_second = std::uninitialized_move(begin_first(), end_first(), to_begin_second(new_buffer, new_capacity));
+                constructed_second = std::uninitialized_move(begin_second(), end_second(), to_begin_second(new_buffer, new_capacity));
             }
         }
         catch(...){
@@ -727,7 +999,7 @@ struct dual_vector{
                 constructed_first = new_buffer + insert_index;
             }
             alloc_destroy(new_buffer, constructed_first, allocator);
-            auto new_begin_second = to_second_begin(new_buffer, new_capacity);
+            auto new_begin_second = to_begin_second(new_buffer, new_capacity);
             if (constructed_second-new_begin_second > insert_index){
                 alloc_destroy(new_begin_second + insert_index + 1, constructed_second, allocator);
                 constructed_second = new_begin_second + insert_index;
@@ -906,7 +1178,7 @@ struct dual_vector{
 
     void reserve(std::size_t new_capacity){
         if(new_capacity > buffer_capacity){
-            relocate(buffer_capacity);
+            relocate(new_capacity);
         }
     }
 
@@ -1000,7 +1272,7 @@ struct dual_vector{
         if(array_size < buffer_capacity){
             shift_elements(index, index + 1);
             try{
-                insert_at(index, std::forward<FirstArg>(first_arg), index, std::forward<SecondArg>(second_arg));
+                insert_at(begin_first() + index, std::forward<FirstArg>(first_arg), begin_second() + index, std::forward<SecondArg>(second_arg));
             } catch(...){
                 if constexpr (std::is_nothrow_move_constructible_v<first> && std::is_nothrow_move_constructible_v<second>){
                     unshift_elements(index, index + 1);
@@ -1014,7 +1286,7 @@ struct dual_vector{
             }
             ++array_size;
         } else {
-            insert_relocate(buffer_capacity + buffer_capacity/2, index, std::forward<FirstArg>(first_arg), std::forward<SecondArg>(second_arg));
+            insert_relocate(buffer_capacity + buffer_capacity/2 + 2, index, std::forward<FirstArg>(first_arg), std::forward<SecondArg>(second_arg));
         }
     }
 
@@ -1060,12 +1332,12 @@ struct dual_vector{
     }
     private:
     template<typename FirstArg, typename SecondArg>
-        requires std::same_as<std::remove_cvref_t<FirstArg>, first> && std::same_as<std::remove_cvref_t<SecondArg>, second>
+        requires std::convertible_to<std::remove_cvref_t<FirstArg>, first> && std::convertible_to<std::remove_cvref_t<SecondArg>, second>
     void push_back_imp(FirstArg&& first_arg, SecondArg&& second_arg){
         auto construct = bind::bind_construct(allocator);
 
         if (array_size == buffer_capacity){
-            relocate(buffer_capacity + buffer_capacity/2);
+            relocate(buffer_capacity + buffer_capacity/2 + 2);
         }
 
         if constexpr (!element_no_throw_move<SecondArg>){
@@ -1092,12 +1364,12 @@ struct dual_vector{
 
     void check_relocate(size_type target_size){
         if (buffer_capacity < target_size){
-            relocate(std::max(buffer_capacity + buffer_capacity/2, target_size));
+            relocate(std::max(buffer_capacity + buffer_capacity/2 + 2, target_size));
         }
     }
     public:
     template<typename FirstArg, typename SecondArg>
-        requires std::same_as<std::remove_cvref_t<FirstArg>, FirstType> && std::same_as<std::remove_cvref_t<SecondArg>, SecondType>
+        requires std::convertible_to<std::remove_cvref_t<FirstArg>, FirstType> && std::convertible_to<std::remove_cvref_t<SecondArg>, SecondType>
     void push_back(FirstArg&& first_arg, SecondArg&& second_arg){
         if constexpr(layout::reversed){
             push_back_imp(std::forward<SecondArg>(second_arg), std::forward<FirstArg>(first_arg));
@@ -1149,8 +1421,35 @@ struct dual_vector{
 
 }
 
+template<typename LHSFirstRef, typename LHSSecondRef, typename RHSFirst, typename RHSSecond, template<typename> typename FirstQual, template<typename> typename SecondQual>
+struct std::basic_common_reference<ann::dual_vector_reference<LHSFirstRef, LHSSecondRef>, std::pair<RHSFirst, RHSSecond>, FirstQual, SecondQual>{
+    using qualified_pair = SecondQual<std::pair<RHSFirst, RHSSecond>>;
+    //static constexpr bool pair_is_const = std::is_const_v<std::remove_reference_t<SecondQual<std::pair<RHSFirst, RHSSecond>>>;
+
+    //template<typename Type>
+    //using prop_const = std::conditional_t<pair_is_const, const 
+
+    using first_rhs_ref  = std::conditional_t<std::is_reference_v<RHSFirst>, RHSFirst, SecondQual<RHSFirst>>;
+    using second_rhs_ref = std::conditional_t<std::is_reference_v<RHSSecond>, RHSSecond, SecondQual<RHSSecond>>;
+    using type = ann::dual_vector_reference<
+                    std::common_reference_t<LHSFirstRef, first_rhs_ref>,
+                    std::common_reference_t<LHSSecondRef, second_rhs_ref>
+                >;
+};
+
+template<typename LHSFirst, typename LHSSecond, typename RHSFirstRef, typename RHSSecondRef, template<typename> typename FirstQual, template<typename> typename SecondQual>
+struct std::basic_common_reference<std::pair<LHSFirst, LHSSecond>, ann::dual_vector_reference<RHSFirstRef, RHSSecondRef>, FirstQual, SecondQual> :
+    std::basic_common_reference<ann::dual_vector_reference<RHSFirstRef, RHSSecondRef>, std::pair<LHSFirst, LHSSecond>, SecondQual, FirstQual> {};
+
+template<typename LHSFirstRef, typename LHSSecondRef, typename RHSFirstRef, typename RHSSecondRef, template<typename> typename FirstQual, template<typename> typename SecondQual>
+struct std::basic_common_reference<ann::dual_vector_reference<LHSFirstRef, LHSSecondRef>, ann::dual_vector_reference<RHSFirstRef, RHSSecondRef>, FirstQual, SecondQual>{
+    using type = ann::dual_vector_reference<
+                    std::common_reference_t<LHSFirstRef, RHSSecondRef>&&,
+                    std::common_reference_t<LHSSecondRef, RHSSecondRef>&&
+                >;
+};
 
 
-int main(){
 
-}
+
+#endif
