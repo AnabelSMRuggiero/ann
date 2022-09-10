@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstdint>
 #include <functional>
+#include <memory_resource>
 #include <ranges>
 #include <utility>
 
@@ -91,6 +92,150 @@ TEST_CASE( "Copy, move, and list init", "[dual_vector]"){
     ann::dual_vector<std::uint16_t, std::uint64_t> first_vec = {{134, 253446}, {135, 252446}, {34, 25346}};
     ann::dual_vector<std::uint16_t, std::uint64_t> second_vec = first_vec;
     
-    REQUIRE(std::ranges::equal(first_vec, second_vec));
+    REQUIRE(first_vec == second_vec);
 
+    ann::dual_vector<std::uint16_t, std::uint64_t> third_vec = {{14, 35263512}, {72, 5673}, {14, 35263512}, {72, 5673}};
+    second_vec = third_vec;
+
+    REQUIRE(second_vec == third_vec);
+
+    ann::dual_vector<std::uint16_t, std::uint64_t> fourth_vec = std::move(first_vec);
+    second_vec = ann::dual_vector<std::uint16_t, std::uint64_t>{{134, 253446}, {135, 252446}, {34, 25346}};
+
+    REQUIRE(second_vec == fourth_vec);
+}
+
+TEST_CASE( "Nested data structures with std::allocator", "[dual_vector]"){
+    using nested_vecs = ann::dual_vector<std::vector<std::int32_t>, std::vector<std::int64_t>>;
+    nested_vecs first_vec = {{{435, 2351, 53}, {-235, 43562, 32435, 5234}}, {{43, 24351, 73, 365}, {235, -4562, 32535}}};
+    nested_vecs second_vec = first_vec;
+
+    REQUIRE(first_vec == second_vec);
+
+    nested_vecs third_vec = {
+        {
+            {435, 2351, 53, 3365}, 
+            {-235, -43722, 632435, 524}
+        }, 
+        {
+            {43, 24351, 73, 365},
+            {235, -4562, 32535}
+        },
+        {
+            {9403, 34895, -589342, 39054, -23523},
+            {543525}
+        }
+    };
+
+    second_vec = third_vec;
+
+    REQUIRE(second_vec == third_vec);
+
+    nested_vecs fourth_vec = std::move(first_vec);
+    second_vec = nested_vecs{{{435, 2351, 53}, {-235, 43562, 32435, 5234}}, {{43, 24351, 73, 365}, {235, -4562, 32535}}};
+
+    REQUIRE(second_vec == fourth_vec);
+
+}
+
+constexpr auto check_allocator = [](auto&& outer_allocator){
+    return [=](const auto& inner_container){
+        return inner_container.get_allocator() == outer_allocator;
+    };
+};
+
+enum class vector_half{
+    first,
+    second
+};
+
+template<vector_half Half>
+bool check_allocator_scoping(auto&& dual_vec){
+    if constexpr (Half == vector_half::first){
+        return std::ranges::all_of(
+            dual_vec.view_first(),
+            check_allocator(dual_vec.get_allocator())
+        );
+    } else {
+        return std::ranges::all_of(
+            dual_vec.view_second(),
+            check_allocator(dual_vec.get_allocator())
+        );
+    }
+}
+
+TEST_CASE( "Nested data structures with std::pmr::polymorphic_allocator", "[dual_vector]"){
+    using nested_vecs = ann::pmr::dual_vector<std::pmr::vector<std::int32_t>, std::pmr::vector<std::int64_t>>;
+    std::pmr::monotonic_buffer_resource first_resource{};
+    nested_vecs first_vec = nested_vecs({{{435, 2351, 53}, {-235, 43562, 32435, 5234}}, {{43, 24351, 73, 365}, {235, -4562, 32535}}}, &first_resource);
+
+    REQUIRE(
+        check_allocator_scoping<vector_half::first>(first_vec)
+    );
+
+    REQUIRE(
+        check_allocator_scoping<vector_half::second>(first_vec)
+    );
+
+    nested_vecs second_vec(first_vec, &first_resource);
+
+    REQUIRE(
+        check_allocator_scoping<vector_half::first>(second_vec)
+    );
+
+    REQUIRE(
+        check_allocator_scoping<vector_half::second>(second_vec)
+    );
+
+    REQUIRE(first_vec == second_vec);
+
+    nested_vecs third_vec = {
+        {
+            {435, 2351, 53, 3365}, 
+            {-235, -43722, 632435, 524}
+        }, 
+        {
+            {43, 24351, 73, 365},
+            {235, -4562, 32535}
+        },
+        {
+            {9403, 34895, -589342, 39054, -23523},
+            {543525}
+        }
+    };
+
+    second_vec = third_vec;
+
+    REQUIRE(second_vec == third_vec);
+    REQUIRE(second_vec.get_allocator() != third_vec.get_allocator());
+    REQUIRE(
+        check_allocator_scoping<vector_half::first>(second_vec)
+    );
+    REQUIRE(
+        check_allocator_scoping<vector_half::second>(second_vec)
+    );
+    REQUIRE(
+        check_allocator_scoping<vector_half::first>(third_vec)
+    );
+    REQUIRE(
+        check_allocator_scoping<vector_half::second>(third_vec)
+    );
+
+    nested_vecs fourth_vec = std::move(first_vec);
+    second_vec = nested_vecs{{{435, 2351, 53}, {-235, 43562, 32435, 5234}}, {{43, 24351, 73, 365}, {235, -4562, 32535}}};
+
+    REQUIRE(second_vec == fourth_vec);
+    REQUIRE(second_vec.get_allocator() != fourth_vec.get_allocator());
+    REQUIRE(
+        check_allocator_scoping<vector_half::first>(second_vec)
+    );
+    REQUIRE(
+        check_allocator_scoping<vector_half::second>(second_vec)
+    );
+    REQUIRE(
+        check_allocator_scoping<vector_half::first>(fourth_vec)
+    );
+    REQUIRE(
+        check_allocator_scoping<vector_half::second>(fourth_vec)
+    );
 }

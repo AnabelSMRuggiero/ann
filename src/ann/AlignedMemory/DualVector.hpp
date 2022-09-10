@@ -12,12 +12,16 @@ https://github.com/AnabelSMRuggiero/NNDescent.cpp
 #define ANN_DUALVECTOR_HPP
 
 #include <algorithm>
+#include <compare>
 #include <concepts>
 #include <cstddef>
+#include <cstring>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <memory_resource>
+#include <span>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -138,9 +142,9 @@ auto uninitialized_alloc_copy(InIter in_iter, InSent in_sent, OutPtr out_ptr, Al
 template<std::input_iterator InIter, std::sentinel_for<InIter> InSent, typename OutPtr, typename Alloc>
     requires std::is_trivially_copyable_v<std::iter_value_t<OutPtr>>
 auto uninitialized_alloc_copy(InIter in_iter, InSent in_sent, OutPtr out_ptr, Alloc& allocator){
-    *out_ptr = *in_iter;
+    //*out_ptr = *in_iter;
     static_assert(std::indirectly_writable<OutPtr, std::iter_reference_t<InIter>>);
-    std::ranges::copy(in_iter, in_sent, out_ptr);
+    return std::ranges::uninitialized_copy(in_iter, in_sent, out_ptr, std::unreachable_sentinel);
 };
 
 template<std::input_iterator InIter, std::sentinel_for<InIter> InSent, typename OutPtr, typename Alloc>
@@ -344,7 +348,7 @@ template<
     typename LHSFirst,
     typename LHSSecond,
     std::three_way_comparable_with<LHSFirst> RHSFirst,
-    std::three_way_comparable_with<LHSFirst> RHSSecond
+    std::three_way_comparable_with<LHSSecond> RHSSecond
 >
 auto operator<=>(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const std::pair<RHSFirst, RHSSecond>& rhs)
     -> std::common_type_t<decltype(lhs.first <=> rhs.first), decltype(lhs.second <=> rhs.second)> {
@@ -356,7 +360,7 @@ template<
     typename LHSFirst,
     typename LHSSecond,
     std::three_way_comparable_with<LHSFirst> RHSFirst,
-    std::three_way_comparable_with<LHSFirst> RHSSecond
+    std::three_way_comparable_with<LHSSecond> RHSSecond
 >
 auto operator<=>(const std::pair<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs)
     -> std::common_type_t<decltype(lhs.first <=> rhs.first), decltype(lhs.second <=> rhs.second)> {
@@ -368,7 +372,7 @@ template<
     typename LHSFirst,
     typename LHSSecond,
     std::three_way_comparable_with<LHSFirst> RHSFirst,
-    std::three_way_comparable_with<LHSFirst> RHSSecond
+    std::three_way_comparable_with<LHSSecond> RHSSecond
 >
 auto operator<=>(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs)
     -> std::common_type_t<decltype(lhs.first <=> rhs.first), decltype(lhs.second <=> rhs.second)> {
@@ -380,7 +384,7 @@ template<
     typename LHSFirst,
     typename LHSSecond,
     std::equality_comparable_with<LHSFirst> RHSFirst,
-    std::equality_comparable_with<LHSFirst> RHSSecond
+    std::equality_comparable_with<LHSSecond> RHSSecond
 >
 bool operator==(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const std::pair<RHSFirst, RHSSecond>& rhs){
     
@@ -391,7 +395,7 @@ template<
     typename LHSFirst,
     typename LHSSecond,
     std::equality_comparable_with<LHSFirst> RHSFirst,
-    std::equality_comparable_with<LHSFirst> RHSSecond
+    std::equality_comparable_with<LHSSecond> RHSSecond
 >
 bool operator==(const std::pair<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs){
     
@@ -402,7 +406,7 @@ template<
     typename LHSFirst,
     typename LHSSecond,
     std::equality_comparable_with<LHSFirst> RHSFirst,
-    std::equality_comparable_with<LHSFirst> RHSSecond
+    std::equality_comparable_with<LHSSecond> RHSSecond
 >
 bool operator==(const dual_vector_reference<LHSFirst, LHSSecond>& lhs, const dual_vector_reference<RHSFirst, RHSSecond>& rhs){
     
@@ -559,6 +563,15 @@ auto iter_move(const dual_vector_iterator<FirstPointer, SecondPointer>& iter){
     return dual_vector_reference<first_reference, second_reference>(std::move(lref.first), std::move(lref.second));
 }
 
+template<bool Attempt>
+decltype(auto) attempt_assign(auto&& lhs, auto&& rhs){
+    if constexpr (Attempt){
+        return lhs = rhs;
+    } else{
+        return (lhs);
+    }
+}
+
 template<typename FirstType, typename SecondType, typename Allocator = std::allocator<std::pair<FirstType, SecondType>>>
 struct dual_vector{
     using value_type = std::pair<FirstType, SecondType>;
@@ -656,14 +669,43 @@ struct dual_vector{
         buffer{allocate(allocator, init.size())},
         buffer_capacity{init.size()},
         array_size{init.size()}{
-            uninitialized_alloc_copy(init.begin(), init.end(), begin(), allocator);
+            
+            auto [first_ptr, second_ptr] = begin();
+            auto init_begin = init.begin();
+            auto init_end = init.end();
+            auto bound_construct = bind_allocator<alloc_first>::bind_construct(allocator);
+            try{
+                for (; init_begin != init_end;  ++init_begin ){
+                    bound_construct(first_ptr, init_begin->first);
+                    ++first_ptr;
+                    bound_construct(second_ptr, init_begin->second);
+                    ++second_ptr;
+                }
+            } catch(...){
+                auto bound_destroy = bind_allocator<alloc_first>::bind_destroy(allocator);
+                auto [first_begin, second_begin] = begin();
+                while( first_ptr != first_begin){
+                    bound_destroy(--first_ptr);
+                }
+                while( second_ptr != second_begin){
+                    bound_destroy(--second_ptr);
+                }
+                deallocate(allocator, buffer, buffer_capacity);
+                buffer = nullptr;
+                array_size = 0;
+                throw;
+            }
+            
     } 
 
     constexpr dual_vector(const dual_vector& other):
         allocator{alloc_traits_first::select_on_container_copy_construction(other.allocator)},
         buffer{allocate(allocator, other.array_size)},
         buffer_capacity{other.array_size},
-        array_size{other.array_size} {}
+        array_size{other.array_size} {
+            uninitialized_alloc_copy(other.begin_first(), other.end_first(), begin_first(), allocator);
+            uninitialized_alloc_copy(other.begin_second(), other.end_second(), begin_second(), allocator);
+        }
 
     constexpr dual_vector(dual_vector&& other) noexcept:
         allocator{other.allocator},
@@ -835,7 +877,7 @@ struct dual_vector{
         pointer_first first_begin = new_buffer;
         pointer_second second_begin = (second *) (std::to_address(new_buffer) + other.array_size);
         try{
-            std::tie(std::ignore, new_buffer) = uninitialized_alloc_copy(other.begin_first(), other.end_first(), new_buffer, new_alloc);
+            new_buffer = uninitialized_alloc_copy(other.begin_first(), other.end_first(), new_buffer, new_alloc).out;
             uninitialized_alloc_copy(other.begin_second(), other.end_second(), second_begin, new_alloc);
         } catch(...){
             auto bound_destroy = bind::bind_destroy(new_alloc);
@@ -852,7 +894,7 @@ struct dual_vector{
         pointer_first new_buffer = new_copy_assign(new_alloc, other);
         destroy_elements();
         deallocate(allocator, buffer, buffer_capacity);
-        allocator = new_alloc;
+        attempt_assign<alloc_prop_copyassign>(allocator, new_alloc);
         buffer = new_buffer;
         array_size = other.array_size;
         buffer_capacity = other.array_size;
@@ -863,8 +905,8 @@ struct dual_vector{
         std::memcpy(to_begin, from_begin, from_end-from_begin);
     }
 
-    template<typename Pointer>
-    void copy_over_array(Pointer from_begin, Pointer from_end, Pointer to_begin, Pointer to_end) {
+    template<typename FromPointer, typename ToPointer>
+    void copy_over_array(FromPointer from_begin, FromPointer from_end, ToPointer to_begin, ToPointer to_end) {
         std::size_t from_size = from_end - from_begin;
         std::size_t to_size = to_end - to_begin;
         if (from_size > to_size){
@@ -1044,19 +1086,21 @@ struct dual_vector{
         }
         return *this;
     }
+    
 
     dual_vector& operator=(dual_vector&& other) noexcept requires (alloc_always_equal || alloc_prop_moveassign) {
         alloc_first old_allocator = allocator;
         pointer_first old_buffer = three_way_exchange(buffer, other.buffer, nullptr); // old_buffer == nullptr on self-assign
         size_type old_size = three_way_exchange(array_size, other.array_size, 0);
         size_type old_capacity = three_way_exchange(buffer_capacity, other.buffer_capacity, 0);
-        
-        deallocate(old_allocator, old_buffer, buffer_capacity);
+        alloc_destroy(old_buffer, old_buffer+old_size, old_allocator);
+        alloc_destroy(to_begin_second(old_buffer, old_capacity), to_begin_second(old_buffer, old_capacity)+old_size, old_allocator);
+        deallocate(old_allocator, old_buffer, old_capacity);
         allocator = alloc_assign_select<alloc_prop_moveassign>(other);
         return *this;
     }
     
-    dual_vector& operator=(dual_vector&& other) requires (move_over) {
+    dual_vector& operator=(dual_vector&& other) requires (move_over && !(alloc_always_equal || alloc_prop_moveassign)) {
         if (allocator == other.allocator){
             pointer_first old_buffer = three_way_exchange(buffer, other.buffer, nullptr); // old_buffer == nullptr on self-assign
             size_type old_size = three_way_exchange(array_size, other.array_size, 0);
@@ -1086,13 +1130,15 @@ struct dual_vector{
             pointer_first old_buffer = three_way_exchange(buffer, other.buffer, nullptr); // old_buffer == nullptr on self-assign
             size_type old_size = three_way_exchange(array_size, other.array_size, 0);
             size_type old_capacity = three_way_exchange(buffer_capacity, other.buffer_capacity, 0);
-            
+            alloc_destroy(old_buffer, old_buffer+old_size, allocator);
+            alloc_destroy(to_begin_second(old_buffer, old_capacity), to_begin_second(old_buffer, old_capacity)+old_size, allocator);
             deallocate(allocator, old_buffer, buffer_capacity);
         } else {
             
             pointer_first new_buffer = allocate(allocator, other.array_size);
-            uninitialized_alloc_move(begin_first(), end_first(), new_buffer, allocator);
-            uninitialized_alloc_move(begin_second(), end_second(), (second *)(std::to_address(new_buffer)+other.array_size), allocator);
+            uninitialized_alloc_move(other.begin_first(), other.end_first(), new_buffer, allocator);
+            uninitialized_alloc_move(other.begin_second(), other.end_second(), (second *)(std::to_address(new_buffer)+other.array_size), allocator);
+            destroy_elements();
             deallocate(allocator, buffer, buffer_capacity);
             buffer = new_buffer;
             array_size = other.array_size;
@@ -1161,6 +1207,38 @@ struct dual_vector{
             return {end_second(), end_first()};
         } else {
             return {end_first(), end_second()};
+        }
+    }
+
+    std::span<FirstType> view_first() noexcept{
+        if constexpr (layout::reversed){
+            return {begin_second(), end_second()};
+        } else {
+            return {begin_first(), end_first()};
+        }
+    }
+
+    std::span<const FirstType> view_first() const noexcept{
+        if constexpr (layout::reversed){
+            return {begin_second(), end_second()};
+        } else {
+            return {begin_first(), end_first()};
+        }
+    }
+
+    std::span<SecondType> view_second() noexcept{
+        if constexpr (layout::reversed){
+            return {begin_first(), end_first()};
+        } else {
+            return {begin_second(), end_second()};
+        }
+    }
+
+    std::span<const SecondType> view_second() const noexcept{
+        if constexpr (layout::reversed){
+            return {begin_first(), end_first()};
+        } else {
+            return {begin_second(), end_second()};
         }
     }
 
@@ -1419,6 +1497,30 @@ struct dual_vector{
     size_type array_size;
 };
 
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::equality_comparable_with<LHSFirst> RHSFirst,
+    std::equality_comparable_with<LHSSecond> RHSSecond,
+    typename AllocFirst,
+    typename AllocSecond
+>
+bool operator==(const dual_vector<LHSFirst, LHSSecond, AllocFirst>& lhs, const dual_vector<RHSFirst, RHSSecond, AllocSecond>& rhs){
+    return std::ranges::equal(lhs, rhs);
+}
+
+template<
+    typename LHSFirst,
+    typename LHSSecond,
+    std::three_way_comparable_with<LHSFirst> RHSFirst,
+    std::three_way_comparable_with<LHSSecond> RHSSecond,
+    typename AllocFirst,
+    typename AllocSecond
+>
+bool operator<=>(const dual_vector<LHSFirst, LHSSecond, AllocFirst>& lhs, const dual_vector<RHSFirst, RHSSecond, AllocSecond>& rhs){
+    return std::lexicographical_compare_three_way(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+}
+
 }
 
 template<typename LHSFirstRef, typename LHSSecondRef, typename RHSFirst, typename RHSSecond, template<typename> typename FirstQual, template<typename> typename SecondQual>
@@ -1444,12 +1546,17 @@ struct std::basic_common_reference<std::pair<LHSFirst, LHSSecond>, ann::dual_vec
 template<typename LHSFirstRef, typename LHSSecondRef, typename RHSFirstRef, typename RHSSecondRef, template<typename> typename FirstQual, template<typename> typename SecondQual>
 struct std::basic_common_reference<ann::dual_vector_reference<LHSFirstRef, LHSSecondRef>, ann::dual_vector_reference<RHSFirstRef, RHSSecondRef>, FirstQual, SecondQual>{
     using type = ann::dual_vector_reference<
-                    std::common_reference_t<LHSFirstRef, RHSSecondRef>&&,
+                    std::common_reference_t<LHSFirstRef, RHSFirstRef>&&,
                     std::common_reference_t<LHSSecondRef, RHSSecondRef>&&
                 >;
 };
 
+namespace ann::pmr{
 
+template<typename FirstType, typename SecondType>
+using dual_vector = ann::dual_vector<FirstType, SecondType, std::pmr::polymorphic_allocator<std::pair<FirstType, SecondType>>>;
+
+}
 
 
 #endif
