@@ -72,7 +72,7 @@ struct bind_allocator{
         };
     };
 
-    inline static constexpr auto bind_destroy = []<typename... Types>(allocator_type& alloc) noexcept{
+    inline static constexpr auto bind_destroy = [](allocator_type& alloc) noexcept{
         return [&] <typename Pointer> (Pointer ptr) noexcept{
             alloc_traits::destroy(alloc, ptr);
         };
@@ -165,7 +165,7 @@ auto uninitialized_alloc_move(InIter in_iter, InSent in_sent, OutPtr out_ptr, Al
     return std::ranges::in_out_result<InIter, OutPtr>{in_iter, out_ptr};
 };
 
-template<std::input_iterator InIter, std::sentinel_for<InIter> InSent, typename OutPtr, typename Alloc>
+template<std::input_iterator InIter, std::sentinel_for<InIter> InSent, typename Alloc>
 auto uninitialized_alloc_construct(InIter begin, InSent end, Alloc& allocator){
     InIter original_begin = begin;
     auto bound_construct = bind_allocator<Alloc>::bind_construct(allocator);
@@ -259,13 +259,13 @@ struct dual_vector_reference{
         second{other.second} {}
 
     template<
-        std::convertible_to<first_value> FirstOther,
-        std::convertible_to<second_value> SecondOther
+        is_pair Pair
     >
-    constexpr dual_vector_reference(std::pair<FirstOther, SecondOther>&& other_pair):
-        first{other_pair.first},
-        second{other_pair.second}{}
+    constexpr dual_vector_reference(construct_wrapper<Pair&&> other_pair):
+        first{std::forward<Pair>(other_pair.pair).first},
+        second{std::forward<Pair>(other_pair.pair).second}{}
 
+    
     template<
         std::convertible_to<first_value> FirstOther,
         std::convertible_to<second_value> SecondOther
@@ -295,12 +295,12 @@ struct dual_vector_reference{
     }
 
     template<
-        std::convertible_to<first_value> FirstOther,
-        std::convertible_to<second_value> SecondOther
+        typename FirstOther,
+        typename SecondOther
     >
-    constexpr const dual_vector_reference& operator=(assign_wrapper<const dual_vector_reference<FirstOther&&, SecondOther&&>&> other_reference) const {
-        first = std::forward<FirstOther>(other_reference.pair.first);
-        second = std::forward<SecondOther>(other_reference.pair.second);
+    constexpr const dual_vector_reference& operator=(const dual_vector_reference<FirstOther&&, SecondOther&&>& other_reference) const {
+        first = std::forward<FirstOther>(other_reference.first);
+        second = std::forward<SecondOther>(other_reference.second);
         return *this;
     }
 
@@ -313,7 +313,15 @@ struct dual_vector_reference{
     }
     */
     
-   
+    template<
+        is_pair Pair
+    >
+    constexpr const dual_vector_reference& operator=(Pair&& other_pair) const {
+        first = std::forward<Pair>(other_pair).first;
+        second = std::forward<Pair>(other_pair).second;
+        return *this;
+    }
+    /*
     template<
         std::convertible_to<first_value> FirstOther,
         std::convertible_to<second_value> SecondOther
@@ -334,10 +342,11 @@ struct dual_vector_reference{
         second = other_pair.second;
         return *this;
     }
-    
-    public:
+    */
 
-    operator std::pair<first_value, second_value>() const {
+    constexpr const dual_vector_reference& operator=(const dual_vector_reference&) requires false;
+
+    operator std::pair<std::remove_cvref_t<first_value>, std::remove_cvref_t<second_value>>() const {
         return {std::forward<FirstType>(first), std::forward<SecondType>(second)};
     }
 
@@ -563,6 +572,26 @@ auto iter_move(const dual_vector_iterator<FirstPointer, SecondPointer>& iter){
     return dual_vector_reference<first_reference, second_reference>(std::move(lref.first), std::move(lref.second));
 }
 
+template<typename LHSPointer, typename RHSPointer>
+concept pointer_swappable = std::indirectly_swappable<LHSPointer,
+                                                RHSPointer>;
+
+template<
+    typename LHSFirstPointer,
+    typename LHSSecondPointer,
+    pointer_swappable<LHSFirstPointer> RHSFirstPointer,
+    pointer_swappable<LHSSecondPointer> RHSSecondPointer
+>
+void iter_swap(
+    const dual_vector_iterator<LHSFirstPointer, LHSSecondPointer>& lhs_iter,
+    const dual_vector_iterator<RHSFirstPointer, RHSSecondPointer>& rhs_iter
+){
+    std::ranges::iter_swap(lhs_iter.first_ptr, rhs_iter.first_ptr);
+    std::ranges::iter_swap(lhs_iter.second_ptr, rhs_iter.second_ptr);
+}
+
+
+
 template<bool Attempt>
 decltype(auto) attempt_assign(auto&& lhs, auto&& rhs){
     if constexpr (Attempt){
@@ -645,7 +674,7 @@ struct dual_vector{
 
     constexpr dual_vector(std::size_t size_in, const allocator_type& alloc = {}): 
         allocator{alloc},
-        buffer{allocate(alloc, size_in)},
+        buffer{allocate(allocator, size_in)},
         buffer_capacity{size_in},
         array_size{size_in} {
             initalize(bind::bind_construct(allocator));
@@ -703,6 +732,17 @@ struct dual_vector{
         buffer{allocate(allocator, other.array_size)},
         buffer_capacity{other.array_size},
         array_size{other.array_size} {
+            //exception handling
+            uninitialized_alloc_copy(other.begin_first(), other.end_first(), begin_first(), allocator);
+            uninitialized_alloc_copy(other.begin_second(), other.end_second(), begin_second(), allocator);
+        }
+    
+    constexpr dual_vector(const dual_vector& other, const allocator_type& alloc):
+        allocator{alloc},
+        buffer{allocate(allocator, other.array_size)},
+        buffer_capacity{other.array_size},
+        array_size{other.array_size} {
+            //exception handling
             uninitialized_alloc_copy(other.begin_first(), other.end_first(), begin_first(), allocator);
             uninitialized_alloc_copy(other.begin_second(), other.end_second(), begin_second(), allocator);
         }
@@ -712,6 +752,25 @@ struct dual_vector{
         buffer{std::exchange(other.buffer, nullptr)},
         buffer_capacity{std::exchange(other.buffer_capacity, 0)},
         array_size{std::exchange(other.array_size, 0)} {}
+
+    constexpr dual_vector(dual_vector&& other, const allocator_type& alloc) noexcept:
+        allocator{alloc},
+        buffer{nullptr},
+        buffer_capacity{0},
+        array_size{0} {
+            if(allocator == other.allocator){
+                buffer = std::exchange(other.buffer, nullptr);
+                buffer_capacity = std::exchange(other.buffer_capacity, 0);
+                array_size = std::exchange(other.array_size, 0);
+            } else{
+                //exception handling
+                buffer = allocate(allocator, other.array_size);
+                buffer_capacity = other.size();
+                array_size = other.size();
+                uninitialized_alloc_copy(other.begin_first(), other.end_first(), begin_first(), allocator);
+                uninitialized_alloc_copy(other.begin_second(), other.end_second(), begin_second(), allocator);
+            }
+        }
 
 
     constexpr ~dual_vector(){
@@ -1393,13 +1452,14 @@ struct dual_vector{
         return begin()+index;
     }
 
-    iterator erase(const_iterator first, const_iterator end){
-        if (first == end){
-            return end;
+    iterator erase(const_iterator first, const_iterator last){
+        if (first == last){
+            auto begin_iter = begin();
+            return begin_iter + (last - begin_iter);
         }
 
         auto begin_index = first-begin();
-        auto end_index = end-begin();
+        auto end_index = last-begin();
         pointer_first destroy_first = std::rotate(begin_first()+begin_index, begin_first()+end_index, end_first());
         pointer_second destroy_second = std::rotate(begin_second()+begin_index, begin_second()+end_index, end_second());
 
@@ -1460,6 +1520,13 @@ struct dual_vector{
     void push_back(PairLike&& pair_like){
         auto&& [first_arg, second_arg] = std::forward<PairLike>(pair_like);
         push_back(std::forward<decltype(first_arg)>(first_arg), std::forward<decltype(second_arg)>(second_arg));
+    }
+
+    void pop_back(){
+        auto destroy = bind_allocator<alloc_first>::bind_destroy(allocator);
+        destroy(end_first()-1);
+        destroy(end_second()-1);
+        --array_size;
     }
     //reference emplace_back(...)
     void resize(size_type new_size){
@@ -1557,6 +1624,16 @@ template<typename FirstType, typename SecondType>
 using dual_vector = ann::dual_vector<FirstType, SecondType, std::pmr::polymorphic_allocator<std::pair<FirstType, SecondType>>>;
 
 }
+
+static_assert(std::indirectly_writable<ann::dual_vector_iterator<float*, bool*>, std::iter_rvalue_reference_t<ann::dual_vector_iterator<float*, bool*>>>);
+
+static_assert(requires(ann::dual_vector_iterator<float*, bool*>&& o, std::iter_rvalue_reference_t<ann::dual_vector_iterator<float*, bool*>>&& t){
+    *o = std::forward<std::iter_rvalue_reference_t<ann::dual_vector_iterator<float*, bool*>>>(t);
+//    *std::forward<Out>(o) = std::forward<T>(t);
+//    const_cast<const std::iter_reference_t<Out>&&>(*o) = std::forward<T>(t);
+//    const_cast<const std::iter_reference_t<Out>&&>(*std::forward<Out>(o)) =
+//        std::forward<T>(t);
+});
 
 
 #endif

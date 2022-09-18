@@ -53,13 +53,13 @@ TEST_CASE( "Push back and insert", "[dual_vector]"){
     REQUIRE(two_d_vecs.size() == 5);
     REQUIRE(two_d_vecs.capacity() >= 5);
 
-    two_d_vecs.insert(two_d_vecs.end(), 3.4, 3.1);
+    two_d_vecs.insert(two_d_vecs.end(), 3.4f, 3.1f);
     REQUIRE(two_d_vecs.size() == 6);
     
     
     REQUIRE(two_d_vecs.back() == std::pair{3.4f, 3.1f});
 
-    two_d_vecs.insert(two_d_vecs.begin()+3, 5.1, 6.7);
+    two_d_vecs.insert(two_d_vecs.begin()+3, 5.1f, 6.7f);
     REQUIRE(two_d_vecs.size() == 7);
 
     
@@ -221,7 +221,7 @@ TEST_CASE( "Nested data structures with std::pmr::polymorphic_allocator", "[dual
         check_allocator_scoping<vector_half::second>(third_vec)
     );
 
-    nested_vecs fourth_vec = std::move(first_vec);
+    nested_vecs fourth_vec{std::move(first_vec), {}};
     second_vec = nested_vecs{{{435, 2351, 53}, {-235, 43562, 32435, 5234}}, {{43, 24351, 73, 365}, {235, -4562, 32535}}};
 
     REQUIRE(second_vec == fourth_vec);
