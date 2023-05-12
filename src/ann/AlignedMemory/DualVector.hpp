@@ -304,6 +304,15 @@ struct dual_vector_reference{
         return *this;
     }
 
+    template<
+        typename FirstOther,
+        typename SecondOther
+    >
+    constexpr const dual_vector_reference& operator=(const dual_vector_reference<FirstOther&, SecondOther&>& other_reference) const {
+        first = std::forward<FirstOther>(other_reference.first);
+        second = std::forward<SecondOther>(other_reference.second);
+        return *this;
+    }
     
     /*
     template<is_pair Pair>
@@ -436,7 +445,16 @@ dual_vector_reference(const std::pair<FirstType, SecondType>&) -> dual_vector_re
 template<typename FirstType, typename SecondType>
 dual_vector_reference(std::pair<FirstType, SecondType>&&) -> dual_vector_reference<FirstType&&, SecondType&&>;
 
-
+template<
+    typename LHSFirstRef,
+    typename LHSSecondRef,
+    typename RHSFirstRef,
+    typename RHSSecondRef
+>
+void swap(dual_vector_reference<LHSFirstRef, LHSSecondRef> lhs, dual_vector_reference<RHSFirstRef, RHSSecondRef> rhs){
+    std::ranges::swap(std::forward<LHSFirstRef&&>(lhs.first), std::forward<RHSFirstRef&&>(rhs.first));
+    std::ranges::swap(std::forward<LHSSecondRef&&>(lhs.second), std::forward<RHSSecondRef&&>(rhs.second));
+}
 
 template<typename FirstPointer, typename SecondPointer>
 struct dual_vector_iterator{
@@ -563,8 +581,8 @@ dual_vector_iterator<FirstPointer, SecondPointer> operator-(std::ptrdiff_t inc, 
 
 template<typename FirstPointer, typename SecondPointer>
 auto iter_move(const dual_vector_iterator<FirstPointer, SecondPointer>& iter){
-    using first_element = std::pointer_traits<FirstPointer>::element_type;
-    using second_element = std::pointer_traits<SecondPointer>::element_type;
+    using first_element = typename std::pointer_traits<FirstPointer>::element_type;
+    using second_element = typename std::pointer_traits<SecondPointer>::element_type;
     using first_reference = std::conditional_t<std::is_const_v<first_element>, const first_element&, first_element&&>;
     using second_reference = std::conditional_t<std::is_const_v<second_element>, const second_element&, second_element&&>;
 
@@ -1045,13 +1063,13 @@ struct dual_vector{
 
     template<std::convertible_to<first> FirstArg, std::convertible_to<second> SecondArg>
     void insert_at(pointer_first first_location, FirstArg&& first_arg, pointer_second second_location, SecondArg&& second_arg){
-        auto copy_construct = bind::bind_copy_construct(allocator);
+        auto bound_construct = bind::bind_construct(allocator);
         if constexpr (!move_insert<first, FirstArg>){
-            copy_construct(first_location, first_arg);
+            bound_construct(first_location, first_arg);
         }
         if constexpr (!move_insert<second, SecondArg>){
             try{
-                copy_construct(second_location, second_arg);
+                bound_construct(second_location, second_arg);
             } catch(...){
                 if constexpr(!move_insert<first, FirstArg>){
                     alloc_traits_first::destroy(allocator, first_location);
@@ -1624,16 +1642,5 @@ template<typename FirstType, typename SecondType>
 using dual_vector = ann::dual_vector<FirstType, SecondType, std::pmr::polymorphic_allocator<std::pair<FirstType, SecondType>>>;
 
 }
-
-static_assert(std::indirectly_writable<ann::dual_vector_iterator<float*, bool*>, std::iter_rvalue_reference_t<ann::dual_vector_iterator<float*, bool*>>>);
-
-static_assert(requires(ann::dual_vector_iterator<float*, bool*>&& o, std::iter_rvalue_reference_t<ann::dual_vector_iterator<float*, bool*>>&& t){
-    *o = std::forward<std::iter_rvalue_reference_t<ann::dual_vector_iterator<float*, bool*>>>(t);
-//    *std::forward<Out>(o) = std::forward<T>(t);
-//    const_cast<const std::iter_reference_t<Out>&&>(*o) = std::forward<T>(t);
-//    const_cast<const std::iter_reference_t<Out>&&>(*std::forward<Out>(o)) =
-//        std::forward<T>(t);
-});
-
 
 #endif
